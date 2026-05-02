@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+backend/vendor/
+
+# Environment
+.env
+.env.local
+*.env
+
+# Build outputs
+.next/
+dist/
+build/
+*.exe
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Database
+mysql_data/
