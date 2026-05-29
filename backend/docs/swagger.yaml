@@ -1,0 +1,966 @@
+basePath: /api
+definitions:
+  internal_handlers.authResponse:
+    properties:
+      token:
+        type: string
+      user:
+        $ref: '#/definitions/internal_handlers.userPayload'
+    type: object
+  internal_handlers.createRoomRequest:
+    properties:
+      is_public:
+        type: boolean
+      name:
+        maxLength: 150
+        minLength: 1
+        type: string
+      slug:
+        type: string
+    required:
+    - name
+    type: object
+  internal_handlers.errorResponse:
+    properties:
+      error:
+        example: human-readable error message
+        type: string
+    type: object
+  internal_handlers.lockResponse:
+    properties:
+      is_locked:
+        example: true
+        type: boolean
+    type: object
+  internal_handlers.loginRequest:
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  internal_handlers.messagesListResponse:
+    properties:
+      messages:
+        items:
+          properties:
+            body:
+              type: string
+            created_at:
+              type: string
+            id:
+              type: integer
+            room_id:
+              type: integer
+            sender_id:
+              type: integer
+            sender_name:
+              type: string
+          type: object
+        type: array
+    type: object
+  internal_handlers.muteRequest:
+    properties:
+      muted:
+        type: boolean
+      source:
+        description: '"audio" | "video" | "" (all)'
+        type: string
+    type: object
+  internal_handlers.muteResponse:
+    properties:
+      muted_tracks:
+        example: 1
+        type: integer
+    type: object
+  internal_handlers.participantsListResponse:
+    properties:
+      participants:
+        items:
+          properties:
+            identity:
+              type: string
+            joined_at:
+              type: integer
+            name:
+              type: string
+            sid:
+              type: string
+            state:
+              type: string
+            tracks:
+              items:
+                properties:
+                  muted:
+                    type: boolean
+                  sid:
+                    type: string
+                  source:
+                    type: string
+                  type:
+                    type: string
+                type: object
+              type: array
+          type: object
+        type: array
+    type: object
+  internal_handlers.recordingsListResponse:
+    properties:
+      recordings:
+        items:
+          properties:
+            duration_seconds:
+              type: integer
+            egress_id:
+              type: string
+            ended_at:
+              type: string
+            error:
+              type: string
+            file_path:
+              type: string
+            file_size:
+              type: integer
+            file_url:
+              type: string
+            id:
+              type: integer
+            room_id:
+              type: integer
+            started_at:
+              type: string
+            started_by:
+              type: integer
+            status:
+              type: string
+          type: object
+        type: array
+    type: object
+  internal_handlers.registerRequest:
+    properties:
+      display_name:
+        maxLength: 100
+        minLength: 1
+        type: string
+      email:
+        type: string
+      password:
+        minLength: 8
+        type: string
+    required:
+    - display_name
+    - email
+    - password
+    type: object
+  internal_handlers.roomsListResponse:
+    properties:
+      rooms:
+        items:
+          properties:
+            created_at:
+              type: string
+            id:
+              type: integer
+            is_locked:
+              type: boolean
+            is_public:
+              type: boolean
+            name:
+              type: string
+            owner_id:
+              type: integer
+            slug:
+              type: string
+            updated_at:
+              type: string
+          type: object
+        type: array
+    type: object
+  internal_handlers.sendMessageRequest:
+    properties:
+      body:
+        type: string
+    required:
+    - body
+    type: object
+  internal_handlers.tokenRequest:
+    properties:
+      room:
+        type: string
+    required:
+    - room
+    type: object
+  internal_handlers.tokenResponse:
+    properties:
+      room:
+        type: string
+      token:
+        type: string
+      url:
+        type: string
+    type: object
+  internal_handlers.userPayload:
+    properties:
+      display_name:
+        type: string
+      email:
+        type: string
+      id:
+        type: integer
+    type: object
+  videoconf-backend_internal_models.Message:
+    properties:
+      body:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+      room_id:
+        type: integer
+      sender_id:
+        type: integer
+      sender_name:
+        type: string
+    type: object
+  videoconf-backend_internal_models.Recording:
+    properties:
+      duration_seconds:
+        type: integer
+      egress_id:
+        type: string
+      ended_at:
+        type: string
+      error:
+        type: string
+      file_path:
+        type: string
+      file_size:
+        type: integer
+      file_url:
+        type: string
+      id:
+        type: integer
+      room_id:
+        type: integer
+      started_at:
+        type: string
+      started_by:
+        type: integer
+      status:
+        type: string
+    type: object
+  videoconf-backend_internal_models.Room:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: integer
+      is_locked:
+        type: boolean
+      is_public:
+        type: boolean
+      name:
+        type: string
+      owner_id:
+        type: integer
+      slug:
+        type: string
+      updated_at:
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: |-
+    Backend Go + Gin untuk aplikasi video conference berbasis LiveKit.
+    Auth pakai dua jenis JWT: app JWT (untuk endpoint backend ini) dan LiveKit JWT (untuk connect ke LiveKit server, di-issue oleh /api/token).
+  title: Videoconf Backend API
+  version: "0.1"
+paths:
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Login pakai email + password. Sukses dapet app JWT yang valid 24
+        jam. Rate-limited (5 req burst per IP).
+      parameters:
+      - description: login data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.loginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handlers.authResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "401":
+          description: invalid credentials (email/password salah, generic)
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "429":
+          description: rate limit
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+      summary: Login user
+      tags:
+      - auth
+  /auth/register:
+    post:
+      consumes:
+      - application/json
+      description: Bikin user baru. Email harus unik, password min 8 char, di-hash
+        pakai bcrypt. Sukses langsung dapet app JWT (gak perlu login lagi). Rate-limited
+        (5 req burst per IP).
+      parameters:
+      - description: registration data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.registerRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_handlers.authResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "409":
+          description: email udah dipake
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "429":
+          description: rate limit
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+      summary: Register user baru
+      tags:
+      - auth
+  /recordings/{id}:
+    get:
+      description: Owner only.
+      parameters:
+      - description: recording id
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/videoconf-backend_internal_models.Recording'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Detail recording
+      tags:
+      - recordings
+  /recordings/{id}/stop:
+    post:
+      description: Owner only (cek via room.owner_id). Backend call Egress stop, update
+        status ke "ending". Status jadi "complete" pas file selesai upload (sekarang
+        manual update — webhook auto-update bisa di-add nanti).
+      parameters:
+      - description: recording id
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/videoconf-backend_internal_models.Recording'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Stop recording
+      tags:
+      - recordings
+  /rooms:
+    post:
+      consumes:
+      - application/json
+      description: User yang login otomatis jadi owner. Slug optional — kalau kosong,
+        di-generate random shortuuid.
+      parameters:
+      - description: room data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.createRoomRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/videoconf-backend_internal_models.Room'
+        "400":
+          description: name kosong atau slug pattern invalid
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "409":
+          description: slug udah dipake
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Bikin room baru
+      tags:
+      - rooms
+  /rooms/{idOrSlug}:
+    delete:
+      description: 'Owner only. Cascading delete: messages dan recordings ikut kehapus
+        (FK ON DELETE CASCADE).'
+      parameters:
+      - description: room id atau slug
+        in: path
+        name: idOrSlug
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "403":
+          description: bukan owner
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Hapus room
+      tags:
+      - rooms
+    get:
+      description: Detail satu room. Kalau private, cuma owner yang bisa lihat. idOrSlug
+        bisa numeric room id atau slug string.
+      parameters:
+      - description: room id (number) atau slug
+        in: path
+        name: idOrSlug
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/videoconf-backend_internal_models.Room'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "403":
+          description: private dan bukan owner
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Detail room
+      tags:
+      - rooms
+  /rooms/{idOrSlug}/lock:
+    post:
+      description: Owner only. Locked = /api/token reject non-owner. Tidak ngusir
+        participant yang udah connect — kombinasi dengan kick untuk evict semua.
+      parameters:
+      - description: room id atau slug
+        in: path
+        name: idOrSlug
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handlers.lockResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Lock room
+      tags:
+      - host-controls
+  /rooms/{idOrSlug}/messages:
+    get:
+      description: Return message DESC by id (paling baru duluan). Pagination cursor-based
+        via `before` (pakai id paling tua dari page sebelumnya).
+      parameters:
+      - description: room id atau slug
+        in: path
+        name: idOrSlug
+        required: true
+        type: string
+      - description: default 50, max 200
+        in: query
+        name: limit
+        type: integer
+      - description: kalau diisi, return message dengan id < before
+        in: query
+        name: before
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handlers.messagesListResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: List chat history
+      tags:
+      - chat
+    post:
+      consumes:
+      - application/json
+      description: 'Persist chat message ke DB. Akses control: owner private OK, anyone
+        untuk public. Real-time delivery di-handle frontend via LiveKit data channel
+        terpisah.'
+      parameters:
+      - description: room id atau slug
+        in: path
+        name: idOrSlug
+        required: true
+        type: string
+      - description: message body (max 2000 char)
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.sendMessageRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/videoconf-backend_internal_models.Message'
+        "400":
+          description: body kosong atau >2000 char
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Kirim chat ke room
+      tags:
+      - chat
+  /rooms/{idOrSlug}/participants:
+    get:
+      description: Owner only. Live state dari LiveKit RoomService — bukan dari DB.
+        Identity tiap participant = app user.id (string).
+      parameters:
+      - description: room id atau slug
+        in: path
+        name: idOrSlug
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handlers.participantsListResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "403":
+          description: bukan owner
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "502":
+          description: LiveKit unreachable
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: List participant aktif di room
+      tags:
+      - host-controls
+  /rooms/{idOrSlug}/participants/{identity}:
+    delete:
+      description: Owner only. Forced disconnect via LiveKit. Participant bisa rejoin
+        kalau room masih unlocked — kombinasi lock+kick untuk benar-benar exclude.
+      parameters:
+      - description: room id atau slug
+        in: path
+        name: idOrSlug
+        required: true
+        type: string
+      - description: identity participant
+        in: path
+        name: identity
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Kick participant dari room
+      tags:
+      - host-controls
+  /rooms/{idOrSlug}/participants/{identity}/mute:
+    post:
+      consumes:
+      - application/json
+      description: Owner only. Backend list track participant, filter by source, terus
+        call LiveKit MutePublishedTrack per track yang match. Source kosong = semua
+        track.
+      parameters:
+      - description: room id atau slug
+        in: path
+        name: idOrSlug
+        required: true
+        type: string
+      - description: identity participant (= app user.id)
+        in: path
+        name: identity
+        required: true
+        type: string
+      - description: 'source: audio|video|empty, muted: bool'
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.muteRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handlers.muteResponse'
+        "400":
+          description: source value invalid
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "403":
+          description: bukan owner
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "404":
+          description: participant gak connect
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "502":
+          description: LiveKit error
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Mute / unmute track participant
+      tags:
+      - host-controls
+  /rooms/{idOrSlug}/recordings:
+    get:
+      description: Owner only. Urut paling baru duluan (DESC by started_at).
+      parameters:
+      - description: room id atau slug
+        in: path
+        name: idOrSlug
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handlers.recordingsListResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: List recording per room
+      tags:
+      - recordings
+    post:
+      description: Owner only. Pakai LiveKit Egress room composite (grid layout) →
+        MP4 → upload ke MinIO bucket "recordings". Egress butuh participant aktif
+        — kalau room kosong return 502.
+      parameters:
+      - description: room id atau slug
+        in: path
+        name: idOrSlug
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: 'status: starting'
+          schema:
+            $ref: '#/definitions/videoconf-backend_internal_models.Recording'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "403":
+          description: bukan owner
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "502":
+          description: Egress error (room kosong, dll)
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Mulai recording room
+      tags:
+      - recordings
+  /rooms/{idOrSlug}/unlock:
+    post:
+      description: Owner only. Restore akses non-owner ke /api/token (kalau room public).
+      parameters:
+      - description: room id atau slug
+        in: path
+        name: idOrSlug
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handlers.lockResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Unlock room
+      tags:
+      - host-controls
+  /rooms/my:
+    get:
+      description: Return semua room dimana current user adalah owner, urut paling
+        baru duluan.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handlers.roomsListResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: List room milik saya
+      tags:
+      - rooms
+  /token:
+    post:
+      consumes:
+      - application/json
+      description: Generate JWT untuk frontend connect ke LiveKit server. Cek dulu
+        user authorized buat room (owner kalau private, anyone kalau public, harus
+        unlocked atau owner). Identity di LiveKit = user.id, name = display_name.
+        Token valid 6 jam.
+      parameters:
+      - description: room id atau slug
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handlers.tokenRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handlers.tokenResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "403":
+          description: private dan bukan owner, atau locked dan bukan owner
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+        "404":
+          description: room gak ada
+          schema:
+            $ref: '#/definitions/internal_handlers.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Generate LiveKit access token
+      tags:
+      - token
+schemes:
+- http
+securityDefinitions:
+  BearerAuth:
+    description: Type "Bearer" lalu spasi, lalu app JWT yang didapat dari /auth/login
+      atau /auth/register.
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

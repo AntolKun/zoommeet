@@ -1,0 +1,95 @@
+@import "@fontsource-variable/plus-jakarta-sans";
+@import "@fontsource-variable/jetbrains-mono";
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "SFMono-Regular", monospace;
+
+  /* Warm dark canvas — zinc, not slate. */
+  --color-canvas: #0c0a09;
+  --color-surface: #15110f;
+  --color-surface-2: #1c1917;
+  --color-line: #2a2522;
+  --color-line-strong: #3f3833;
+
+  /* Ink — text colors, not pure white. */
+  --color-ink: #f5efe9;
+  --color-ink-soft: #c0b6ad;
+  --color-ink-muted: #847972;
+  --color-ink-faint: #4a423d;
+
+  /* Accent — warm amber, not cold violet. */
+  --color-flame: #f59e0b;
+  --color-flame-soft: #fbbf24;
+  --color-flame-deep: #b45309;
+
+  /* Status. */
+  --color-ok: #84cc16;
+  --color-bad: #ef4444;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+html {
+  background: var(--color-canvas);
+}
+
+body {
+  margin: 0;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "ss01", "cv11";
+}
+
+#root {
+  min-height: 100svh;
+}
+
+/* Chat toast — single animation handles in + hold + out across the 5s lifetime.
+   Keeps logic out of JS; component just unmounts after the timeout. */
+@keyframes chat-toast {
+  0%   { opacity: 0; transform: translateX(24px); }
+  6%   { opacity: 1; transform: translateX(0); }
+  92%  { opacity: 1; transform: translateX(0); }
+  100% { opacity: 0; transform: translateX(0) translateY(-4px); }
+}
+
+.chat-toast {
+  animation: chat-toast 5000ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-toast {
+    animation: none;
+  }
+}
+
+::selection {
+  background: var(--color-flame);
+  color: var(--color-canvas);
+}
+
+/* Custom focus ring — warm amber, no default blue. */
+:where(button, a, input, textarea, select):focus-visible {
+  outline: 2px solid var(--color-flame);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Subtle film-grain texture on canvas — adds tactile, non-AI feel. */
+body::before {
+  content: "";
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  opacity: 0.04;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.6 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+}
