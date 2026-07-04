@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { useTranslation } from 'react-i18next'
 
 import { ApiError, api } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
@@ -10,12 +11,7 @@ import { Button } from '@/components/ui/Button'
 import { Field, Input, PasswordInput } from '@/components/ui/Field'
 import { Alert } from '@/components/ui/Alert'
 
-const schema = z.object({
-  email: z.string().min(1, 'Email belum diisi').email('Format email belum benar'),
-  password: z.string().min(1, 'Password belum diisi'),
-})
-
-type FormData = z.infer<typeof schema>
+type FormData = { email: string; password: string }
 
 type LoginResponse = {
   token: string
@@ -26,7 +22,17 @@ export function Login() {
   const navigate = useNavigate()
   const location = useLocation()
   const { login } = useAuth()
+  const { t } = useTranslation()
   const [serverError, setServerError] = useState<string | null>(null)
+
+  const schema = useMemo(
+    () =>
+      z.object({
+        email: z.string().min(1, t('auth.errEmailRequired')).email(t('auth.errEmailFormat')),
+        password: z.string().min(1, t('auth.errPasswordRequired')),
+      }),
+    [t],
+  )
 
   const {
     register,
@@ -51,12 +57,11 @@ export function Login() {
       navigate(from, { replace: true })
     } catch (err) {
       if (err instanceof ApiError) {
-        if (err.status === 401) setServerError('Email atau password salah.')
-        else if (err.status === 429)
-          setServerError('Terlalu banyak percobaan. Coba lagi sebentar lagi.')
+        if (err.status === 401) setServerError(t('auth.errInvalidCredentials'))
+        else if (err.status === 429) setServerError(t('auth.errRateLimit'))
         else setServerError(err.message)
       } else {
-        setServerError('Tidak bisa terhubung ke server. Cek koneksimu.')
+        setServerError(t('auth.errGeneric'))
       }
     }
   }
@@ -64,11 +69,11 @@ export function Login() {
   return (
     <>
       <div className="space-y-1.5">
-        <h1 className="text-3xl font-semibold tracking-tight">Masuk lagi</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">{t('auth.loginHeader')}</h1>
         <p className="text-[var(--color-ink-muted)] text-sm">
-          Belum punya akun?{' '}
+          {t('auth.loginNoAccount')}{' '}
           <Link to="/register" className="text-[var(--color-flame)] hover:underline underline-offset-2">
-            Bikin satu — gratis
+            {t('auth.loginNoAccountLink')}
           </Link>
         </p>
       </div>
@@ -76,24 +81,24 @@ export function Login() {
       <form onSubmit={handleSubmit(onSubmit)} className="mt-8 space-y-4" noValidate>
         {serverError && <Alert tone="error">{serverError}</Alert>}
 
-        <Field label="Email" error={errors.email?.message}>
+        <Field label={t('auth.emailLabel')} error={errors.email?.message}>
           {(p) => (
             <Input
               type="email"
               autoComplete="email"
               autoFocus
-              placeholder="kamu@contoh.com"
+              placeholder={t('auth.emailPlaceholder')}
               {...p}
               {...register('email')}
             />
           )}
         </Field>
 
-        <Field label="Password" error={errors.password?.message}>
+        <Field label={t('auth.passwordLabel')} error={errors.password?.message}>
           {(p) => (
             <PasswordInput
               autoComplete="current-password"
-              placeholder="Password kamu"
+              placeholder={t('auth.passwordPlaceholderLogin')}
               {...p}
               {...register('password')}
             />
@@ -101,7 +106,7 @@ export function Login() {
         </Field>
 
         <Button type="submit" loading={isSubmitting} className="w-full mt-2">
-          {isSubmitting ? 'Memeriksa...' : 'Masuk'}
+          {isSubmitting ? t('auth.loginCheckingButton') : t('auth.loginButton')}
         </Button>
       </form>
     </>

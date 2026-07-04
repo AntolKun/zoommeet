@@ -11,14 +11,35 @@ export function setToken(token: string | null) {
   else localStorage.removeItem(TOKEN_KEY)
 }
 
+/**
+ * Decodes the current app JWT payload and returns the user id (`uid` claim).
+ * Returns null if no token, malformed token, or no uid in payload.
+ */
+export function getCurrentUserId(): number | null {
+  const token = getToken()
+  if (!token) return null
+  try {
+    const parts = token.split('.')
+    if (parts.length !== 3) return null
+    const padded = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    const payload = JSON.parse(atob(padded)) as { uid?: unknown }
+    return typeof payload.uid === 'number' ? payload.uid : null
+  } catch {
+    return null
+  }
+}
+
 export class ApiError extends Error {
   status: number
   body: unknown
+  /** Machine-readable error code, e.g. "password_required". */
+  code?: string
 
-  constructor(status: number, body: unknown, message: string) {
+  constructor(status: number, body: unknown, message: string, code?: string) {
     super(message)
     this.status = status
     this.body = body
+    this.code = code
   }
 }
 
@@ -55,11 +76,13 @@ export async function api<T = unknown>(path: string, opts: RequestOptions = {}):
   const data = text ? JSON.parse(text) : undefined
 
   if (!res.ok) {
-    const message =
-      typeof data === 'object' && data !== null && 'error' in data
-        ? String((data as { error: unknown }).error)
-        : `HTTP ${res.status}`
-    throw new ApiError(res.status, data, message)
+    const obj = (typeof data === 'object' && data !== null ? data : {}) as {
+      error?: unknown
+      code?: unknown
+    }
+    const message = 'error' in obj ? String(obj.error) : `HTTP ${res.status}`
+    const code = typeof obj.code === 'string' ? obj.code : undefined
+    throw new ApiError(res.status, data, message, code)
   }
 
   return data as T

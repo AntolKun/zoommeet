@@ -18,6 +18,19 @@ type Config struct {
 	DBDsn            string
 	AppJWTSecret     string
 	CORSOrigins      []string
+	// Allowed email domains for registration (lowercase). Empty = allow any.
+	// Comma-separated env: ALLOWED_REGISTER_DOMAINS="piko.co.id,gmail.com"
+	AllowedRegisterDomains []string
+
+	// MinIO connection — used for avatar uploads. Endpoint is the server-side
+	// host:port (e.g. "minio:9000" inside docker), PublicBaseURL is what
+	// clients use to fetch the file (e.g. "http://localhost:9000").
+	MinIOEndpoint      string
+	MinIOAccessKey     string
+	MinIOSecretKey     string
+	MinIOUseSSL        bool
+	MinIOAvatarBucket  string
+	MinIOPublicBaseURL string
 }
 
 func Load() *Config {
@@ -33,9 +46,24 @@ func Load() *Config {
 		LiveKitAPIKey:    getEnv("LIVEKIT_API_KEY", "devkey"),
 		LiveKitAPISecret: getEnv("LIVEKIT_API_SECRET", "secret"),
 		DBDsn:            getEnv("DB_DSN", ""),
-		AppJWTSecret:     getEnv("APP_JWT_SECRET", "change-me-in-prod"),
-		CORSOrigins:      splitCSV(getEnv("CORS_ORIGINS", "http://localhost:3000")),
+		AppJWTSecret:           getEnv("APP_JWT_SECRET", "change-me-in-prod"),
+		CORSOrigins:            splitCSV(getEnv("CORS_ORIGINS", "http://localhost:3000")),
+		AllowedRegisterDomains: lowerAll(splitCSV(getEnv("ALLOWED_REGISTER_DOMAINS", ""))),
+		MinIOEndpoint:          getEnv("MINIO_ENDPOINT", "localhost:9000"),
+		MinIOAccessKey:         getEnv("MINIO_ACCESS_KEY", "minioadmin"),
+		MinIOSecretKey:         getEnv("MINIO_SECRET_KEY", "minioadmin"),
+		MinIOUseSSL:            getEnv("MINIO_USE_SSL", "false") == "true",
+		MinIOAvatarBucket:      getEnv("MINIO_AVATAR_BUCKET", "avatars"),
+		MinIOPublicBaseURL:     getEnv("MINIO_PUBLIC_BASE_URL", "http://localhost:9000"),
 	}
+}
+
+func lowerAll(in []string) []string {
+	out := make([]string, len(in))
+	for i, s := range in {
+		out[i] = strings.ToLower(s)
+	}
+	return out
 }
 
 func splitCSV(s string) []string {

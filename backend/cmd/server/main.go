@@ -37,6 +37,7 @@ import (
 	"videoconf-backend/internal/livekit"
 	"videoconf-backend/internal/middleware"
 	"videoconf-backend/internal/repo"
+	"videoconf-backend/internal/storage"
 )
 
 func main() {
@@ -56,6 +57,30 @@ func main() {
 	rooms := repo.NewRoomRepo(conn)
 	messages := repo.NewMessageRepo(conn)
 	recordings := repo.NewRecordingRepo(conn)
+	waiting := repo.NewWaitingRepo(conn)
+	cohosts := repo.NewCohostRepo(conn)
+	attendance := repo.NewAttendanceRepo(conn)
+	audit := repo.NewAuditRepo(conn)
+	polls := repo.NewPollRepo(conn)
+	breakouts := repo.NewBreakoutRepo(conn)
+	questions := repo.NewQuestionRepo(conn)
+
+	// MinIO is optional — server still boots if config is missing, but avatar
+	// upload endpoints return 503 in that case.
+	minioStore, mErr := storage.NewMinIO(
+		cfg.MinIOEndpoint, cfg.MinIOAccessKey, cfg.MinIOSecretKey,
+		cfg.MinIOAvatarBucket, cfg.MinIOPublicBaseURL, cfg.MinIOUseSSL,
+	)
+	if mErr != nil {
+		log.Printf("minio init failed (avatar upload disabled): %v", mErr)
+		minioStore = nil
+	} else {
+		ctxBoot, cancelBoot := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := minioStore.EnsureBucket(ctxBoot); err != nil {
+			log.Printf("minio bucket setup failed: %v", err)
+		}
+		cancelBoot()
+	}
 
 	lk := livekit.NewClient(cfg.LiveKitAPIURL, cfg.LiveKitAPIKey, cfg.LiveKitAPISecret)
 	eg := livekit.NewEgressClient(cfg.LiveKitAPIURL, cfg.LiveKitAPIKey, cfg.LiveKitAPISecret)
@@ -93,29 +118,81 @@ func main() {
 		api.POST("/auth/login", authRL.Middleware(), handlers.Login(cfg, users))
 
 		// Public — guest join via shared link, no account needed.
-		api.POST("/rooms/:idOrSlug/guest-token", handlers.GuestToken(cfg, rooms))
+		api.POST("/rooms/:idOrSlug/guest-token", handlers.GuestToken(cfg, rooms, waiting))
+
+		// Public — waiting guest polls admission status with opaque request_token.
+		api.GET("/waiting/:token/status", handlers.WaitingStatus(cfg, rooms, waiting))
+
+		// Public-or-auth — attendance logging works for guests too. TryAuth fills
+		// in user_id when a valid JWT is present, leaves it nil otherwise.
+		tryAuth := middleware.TryAuth(cfg.AppJWTSecret)
+		api.POST("/rooms/:idOrSlug/attendance/join", tryAuth, handlers.LogAttendanceJoin(rooms, attendance))
+		api.POST("/attendance/:id/leave", handlers.LogAttendanceLeave(attendance))
 
 		protected := api.Group("")
 		protected.Use(authMW)
 		{
-			protected.POST("/token", handlers.Token(cfg, users, rooms))
+			protected.POST("/token", handlers.Token(cfg, users, rooms, waiting))
 			protected.POST("/rooms", handlers.CreateRoom(rooms))
 			protected.GET("/rooms/my", handlers.ListMyRooms(rooms))
-			protected.GET("/rooms/:idOrSlug", handlers.GetRoom(rooms))
+			protected.GET("/rooms/:idOrSlug", handlers.GetRoom(rooms, cohosts))
 			protected.DELETE("/rooms/:idOrSlug", handlers.DeleteRoom(rooms))
-			protected.POST("/rooms/:idOrSlug/messages", handlers.SendMessage(rooms, messages))
+			protected.POST("/rooms/:idOrSlug/messages", handlers.SendMessage(rooms, messages, users))
 			protected.GET("/rooms/:idOrSlug/messages", handlers.ListMessages(rooms, messages))
+			protected.PATCH("/messages/:id", handlers.EditMessage(rooms, messages))
+			protected.DELETE("/messages/:id", handlers.DeleteMessage(rooms, cohosts, messages))
+			protected.POST("/messages/:id/reactions", handlers.AddMessageReaction(rooms, messages))
+			protected.DELETE("/messages/:id/reactions/:emoji", handlers.RemoveMessageReaction(messages))
 
-			protected.POST("/rooms/:idOrSlug/lock", handlers.LockRoom(rooms))
-			protected.POST("/rooms/:idOrSlug/unlock", handlers.UnlockRoom(rooms))
-			protected.GET("/rooms/:idOrSlug/participants", handlers.ListParticipants(rooms, lk))
-			protected.POST("/rooms/:idOrSlug/participants/:identity/mute", handlers.MuteParticipant(rooms, lk))
-			protected.DELETE("/rooms/:idOrSlug/participants/:identity", handlers.KickParticipant(rooms, lk))
+			protected.POST("/rooms/:idOrSlug/lock", handlers.LockRoom(rooms, cohosts, audit))
+			protected.POST("/rooms/:idOrSlug/unlock", handlers.UnlockRoom(rooms, cohosts, audit))
+			protected.GET("/rooms/:idOrSlug/participants", handlers.ListParticipants(rooms, cohosts, lk))
+			protected.POST("/rooms/:idOrSlug/participants/:identity/mute", handlers.MuteParticipant(rooms, cohosts, audit, lk))
+			protected.DELETE("/rooms/:idOrSlug/participants/:identity", handlers.KickParticipant(rooms, cohosts, audit, lk))
 
-			protected.POST("/rooms/:idOrSlug/recordings", handlers.StartRecording(rooms, recordings, eg))
-			protected.GET("/rooms/:idOrSlug/recordings", handlers.ListRecordings(rooms, recordings))
-			protected.POST("/recordings/:id/stop", handlers.StopRecording(recordings, rooms, eg))
-			protected.GET("/recordings/:id", handlers.GetRecording(recordings, rooms))
+			protected.POST("/rooms/:idOrSlug/recordings", handlers.StartRecording(rooms, cohosts, audit, recordings, eg))
+			protected.GET("/rooms/:idOrSlug/recordings", handlers.ListRecordings(rooms, cohosts, recordings))
+			protected.POST("/recordings/:id/stop", handlers.StopRecording(recordings, rooms, cohosts, audit, eg))
+			protected.GET("/recordings/:id", handlers.GetRecording(recordings, rooms, cohosts))
+
+			// Waiting room: toggle owner-only; admit/deny/list shared with cohosts.
+			protected.POST("/rooms/:idOrSlug/waiting-room", handlers.ToggleWaitingRoom(rooms, audit))
+			protected.GET("/rooms/:idOrSlug/waiting", handlers.ListWaitingRequests(rooms, cohosts, waiting))
+			protected.POST("/rooms/:idOrSlug/waiting/:id/admit", handlers.AdmitWaiting(cfg, rooms, cohosts, audit, waiting))
+			protected.POST("/rooms/:idOrSlug/waiting/:id/deny", handlers.DenyWaiting(rooms, cohosts, audit, waiting))
+
+			// Co-host management (owner only for write; anyone w/ room access for read).
+			protected.GET("/rooms/:idOrSlug/cohosts", handlers.ListCohosts(rooms, cohosts))
+			protected.POST("/rooms/:idOrSlug/cohosts", handlers.AddCohost(rooms, cohosts, audit, users))
+			protected.DELETE("/rooms/:idOrSlug/cohosts/:userID", handlers.RemoveCohost(rooms, cohosts, audit))
+
+			// Admin: attendance list + audit log (owner / cohost).
+			protected.GET("/rooms/:idOrSlug/attendance", handlers.ListAttendance(rooms, cohosts, attendance))
+			protected.GET("/rooms/:idOrSlug/audit", handlers.ListAuditLog(rooms, audit))
+
+			// Polls — host creates/closes, anyone with room access lists/votes.
+			protected.POST("/rooms/:idOrSlug/polls", handlers.CreatePoll(rooms, cohosts, polls))
+			protected.GET("/rooms/:idOrSlug/polls", handlers.ListPolls(rooms, polls))
+			protected.POST("/polls/:id/vote", handlers.VotePoll(rooms, polls))
+			protected.POST("/polls/:id/close", handlers.ClosePoll(rooms, cohosts, polls))
+
+			// Breakout rooms — host creates N, closes all to signal recall.
+			protected.POST("/rooms/:idOrSlug/breakouts", handlers.CreateBreakouts(rooms, cohosts, breakouts))
+			protected.GET("/rooms/:idOrSlug/breakouts", handlers.ListBreakouts(rooms, cohosts, breakouts))
+			protected.POST("/rooms/:idOrSlug/breakouts/close", handlers.CloseAllBreakouts(rooms, cohosts, breakouts))
+
+			// Q&A — anyone with room access asks/lists/upvotes; host answers/dismisses.
+			protected.POST("/rooms/:idOrSlug/questions", handlers.CreateQuestion(rooms, questions))
+			protected.GET("/rooms/:idOrSlug/questions", handlers.ListQuestions(rooms, questions))
+			protected.POST("/questions/:questionID/upvote", handlers.UpvoteQuestion(questions))
+			protected.DELETE("/questions/:questionID/upvote", handlers.RemoveUpvoteQuestion(questions))
+			protected.POST("/rooms/:idOrSlug/questions/:questionID/answer", handlers.AnswerQuestion(rooms, cohosts, questions))
+			protected.POST("/rooms/:idOrSlug/questions/:questionID/dismiss", handlers.DismissQuestion(rooms, cohosts, questions))
+
+			// Self + avatar.
+			protected.GET("/users/me", handlers.GetMe(users))
+			protected.POST("/users/me/avatar", handlers.UploadAvatar(users, minioStore))
+			protected.GET("/users/me/pmr", handlers.GetMyPMR(users, rooms))
 		}
 	}
 

@@ -67,7 +67,8 @@ func (c *Client) ListParticipants(ctx context.Context, room string) ([]Participa
 }
 
 // MuteParticipant mutes (or unmutes) all tracks of a participant matching the given source.
-// source can be "audio", "video", or empty for all media tracks.
+// source: "audio" = microphone, "video" = camera (NOT screen share),
+// "screen_share" = screen share video + audio, "" = all media tracks.
 func (c *Client) MuteParticipant(ctx context.Context, room, identity, source string, muted bool) (int, error) {
 	res, err := c.rooms.ListParticipants(ctx, &livekit.ListParticipantsRequest{Room: room})
 	if err != nil {
@@ -87,7 +88,7 @@ func (c *Client) MuteParticipant(ctx context.Context, room, identity, source str
 
 	count := 0
 	for _, t := range target.Tracks {
-		if !matchesSource(t.Type, source) {
+		if !matchesSource(t.Type, t.Source, source) {
 			continue
 		}
 		_, err := c.rooms.MutePublishedTrack(ctx, &livekit.MuteRoomTrackRequest{
@@ -104,15 +105,21 @@ func (c *Client) MuteParticipant(ctx context.Context, room, identity, source str
 	return count, nil
 }
 
-func matchesSource(trackType livekit.TrackType, source string) bool {
+func matchesSource(trackType livekit.TrackType, trackSource livekit.TrackSource, source string) bool {
 	switch source {
 	case "":
 		return true
 	case "audio":
-		return trackType == livekit.TrackType_AUDIO
+		// Microphone audio only — screen-share audio is handled by "screen_share".
+		return trackSource == livekit.TrackSource_MICROPHONE
 	case "video":
-		return trackType == livekit.TrackType_VIDEO
+		// Camera video only — screen-share video is handled by "screen_share".
+		return trackSource == livekit.TrackSource_CAMERA
+	case "screen_share":
+		return trackSource == livekit.TrackSource_SCREEN_SHARE ||
+			trackSource == livekit.TrackSource_SCREEN_SHARE_AUDIO
 	}
+	_ = trackType
 	return false
 }
 

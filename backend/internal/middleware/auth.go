@@ -48,3 +48,29 @@ func UserIDFromCtx(c *gin.Context) (uint64, bool) {
 	id, ok := v.(uint64)
 	return id, ok
 }
+
+// TryAuth processes the Authorization header if present but doesn't reject the
+// request when missing or invalid. Use on endpoints that benefit from knowing
+// the user (e.g. attendance logging) but still need to work for guests.
+func TryAuth(secret string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		header := c.GetHeader("Authorization")
+		if header == "" {
+			c.Next()
+			return
+		}
+		parts := strings.SplitN(header, " ", 2)
+		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || parts[1] == "" {
+			c.Next()
+			return
+		}
+		claims, err := auth.ParseToken(secret, parts[1])
+		if err != nil {
+			c.Next()
+			return
+		}
+		c.Set(CtxUserID, claims.UserID)
+		c.Set(CtxEmail, claims.Email)
+		c.Next()
+	}
+}

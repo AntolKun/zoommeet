@@ -1,9 +1,16 @@
 import { Link, NavLink, Outlet } from 'react-router-dom'
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useAuth } from '@/hooks/useAuth'
+import { useMe } from '@/hooks/useMe'
+import { ThemeToggleButton } from '@/components/ThemeToggleButton'
+import { LanguageSwitcher } from '@/components/LanguageSwitcher'
+import { Avatar } from '@/components/Avatar'
 
 export function Layout() {
   const { isAuthenticated, logout } = useAuth()
+  const { data: me } = useMe()
+  const { t } = useTranslation()
 
   return (
     <div className="min-h-svh flex flex-col">
@@ -13,39 +20,48 @@ export function Layout() {
             <BrandMark />
             <span className="text-[15px] font-semibold tracking-tight">videoconf</span>
             <span className="text-[10px] font-mono text-[var(--color-ink-faint)] border border-[var(--color-line)] rounded px-1 py-px">
-              v0.1
+              {t('nav.version')}
             </span>
           </Link>
 
           <nav className="flex items-center gap-5 text-[13px]">
             <Clock />
+            <LanguageSwitcher />
+            <ThemeToggleButton />
             <span className="h-4 w-px bg-[var(--color-line)]" aria-hidden />
             {isAuthenticated ? (
               <>
                 <NavLink to="/dashboard" className={navLinkClass}>
-                  Meeting saya
+                  {t('nav.myMeetings')}
                 </NavLink>
                 <NavLink to="/lobby" className={navLinkClass}>
-                  Gabung
+                  {t('nav.joinMeeting')}
                 </NavLink>
+                {me && (
+                  <Avatar
+                    src={me.avatar_url ?? null}
+                    name={me.display_name}
+                    size="xs"
+                  />
+                )}
                 <button
                   type="button"
                   onClick={logout}
                   className="text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] transition-colors"
                 >
-                  Keluar
+                  {t('nav.logout')}
                 </button>
               </>
             ) : (
               <>
                 <NavLink to="/login" className={navLinkClass}>
-                  Masuk
+                  {t('nav.login')}
                 </NavLink>
                 <NavLink
                   to="/register"
                   className="px-3 py-1.5 rounded-md bg-[var(--color-flame)] text-[var(--color-canvas)] font-medium hover:bg-[var(--color-flame-soft)] transition-colors"
                 >
-                  Bikin akun
+                  {t('nav.register')}
                 </NavLink>
               </>
             )}

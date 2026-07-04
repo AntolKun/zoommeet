@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { useChat, useLocalParticipant } from '@livekit/components-react'
+import { useRoomChat } from '@/hooks/useRoomChat'
+import { playChat } from '@/lib/sounds'
 
 const VISIBLE_MS = 5000
 const MAX_VISIBLE = 4
@@ -11,50 +12,44 @@ type Toast = {
 }
 
 /**
- * Listens to LiveKit chat messages within the current room and shows a
- * fade-in/out toast in the bottom-right corner for each new incoming
- * message. Skips self-sent messages and ignores existing history on mount.
+ * Bottom-right transient notifications for new incoming chat. Reads from
+ * RoomChatProvider so it shares state with ChatPanel (no double subscription).
  *
- * Must be rendered inside <LiveKitRoom>.
+ * Skips messages already present at mount (history is "old"), self-sent
+ * messages, and anything from the initial backend history fetch.
  */
 export function ChatToastNotifier() {
-  const { chatMessages } = useChat()
-  const { localParticipant } = useLocalParticipant()
-  const localIdentity = localParticipant?.identity
+  const { messages } = useRoomChat()
 
-  const seenIds = useRef<Set<string>>(new Set())
+  const seenUids = useRef<Set<string>>(new Set())
   const initialized = useRef(false)
   const [toasts, setToasts] = useState<Toast[]>([])
 
-  // Treat anything already in the buffer at mount as "old" — don't toast it.
+  // Treat whatever is already in the buffer at mount as "old" — don't toast it.
   if (!initialized.current) {
     initialized.current = true
-    for (const m of chatMessages) seenIds.current.add(messageKey(m))
+    for (const m of messages) seenUids.current.add(m.uid)
   }
 
   useEffect(() => {
     const fresh: Toast[] = []
-    for (const m of chatMessages) {
-      const key = messageKey(m)
-      if (seenIds.current.has(key)) continue
-      seenIds.current.add(key)
-      if (m.from?.identity === localIdentity) continue
-      fresh.push({
-        id: key,
-        from: m.from?.name?.trim() || m.from?.identity || 'Tamu',
-        body: m.message,
-      })
+    for (const m of messages) {
+      if (seenUids.current.has(m.uid)) continue
+      seenUids.current.add(m.uid)
+      if (m.isMine) continue
+      fresh.push({ id: m.uid, from: m.sender_name, body: m.body })
     }
     if (fresh.length === 0) return
 
     setToasts((prev) => [...prev, ...fresh].slice(-MAX_VISIBLE))
+    playChat()
 
     for (const t of fresh) {
       window.setTimeout(() => {
         setToasts((prev) => prev.filter((x) => x.id !== t.id))
       }, VISIBLE_MS)
     }
-  }, [chatMessages, localIdentity])
+  }, [messages])
 
   if (toasts.length === 0) return null
 
@@ -84,9 +79,4 @@ function ToastItem({ toast }: { toast: Toast }) {
       </p>
     </div>
   )
-}
-
-function messageKey(m: { id?: string; timestamp?: number; message: string }) {
-  if (m.id) return m.id
-  return `${m.timestamp ?? 0}-${m.message}`
 }

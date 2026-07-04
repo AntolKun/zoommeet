@@ -3,6 +3,7 @@ package repo
 import (
 	"database/sql"
 	"errors"
+	"time"
 
 	"videoconf-backend/internal/models"
 )
@@ -17,16 +18,53 @@ func NewRoomRepo(db *sql.DB) *RoomRepo {
 	return &RoomRepo{db: db}
 }
 
-const roomColumns = `id, slug, name, owner_id, is_public, is_locked, created_at, updated_at`
+const roomColumns = `id, slug, name, owner_id, is_public, is_locked, password_hash, scheduled_at, duration_minutes, recurrence, waiting_room_enabled, default_mic_off, default_cam_off, created_at, updated_at`
 
 func scanRoom(row interface{ Scan(...any) error }, rm *models.Room) error {
-	return row.Scan(&rm.ID, &rm.Slug, &rm.Name, &rm.OwnerID, &rm.IsPublic, &rm.IsLocked, &rm.CreatedAt, &rm.UpdatedAt)
+	var pwHash sql.NullString
+	var recurrence sql.NullString
+	if err := row.Scan(
+		&rm.ID, &rm.Slug, &rm.Name, &rm.OwnerID,
+		&rm.IsPublic, &rm.IsLocked, &pwHash,
+		&rm.ScheduledAt, &rm.DurationMinutes, &recurrence,
+		&rm.WaitingRoomEnabled,
+		&rm.DefaultMicOff, &rm.DefaultCamOff,
+		&rm.CreatedAt, &rm.UpdatedAt,
+	); err != nil {
+		return err
+	}
+	if pwHash.Valid {
+		rm.PasswordHash = pwHash.String
+		rm.HasPassword = pwHash.String != ""
+	}
+	if recurrence.Valid && recurrence.String != "" {
+		s := recurrence.String
+		rm.Recurrence = &s
+	}
+	return nil
 }
 
-func (r *RoomRepo) Create(slug, name string, ownerID uint64, isPublic bool) (*models.Room, error) {
+type CreateRoomInput struct {
+	Slug            string
+	Name            string
+	OwnerID         uint64
+	IsPublic        bool
+	ScheduledAt     *time.Time
+	DurationMinutes *uint32
+	// Pre-hashed (bcrypt) password; nil/empty = no password gate.
+	PasswordHash *string
+	// "daily" / "weekly" or nil for one-time.
+	Recurrence         *string
+	WaitingRoomEnabled bool
+	DefaultMicOff      bool
+	DefaultCamOff      bool
+}
+
+func (r *RoomRepo) Create(in CreateRoomInput) (*models.Room, error) {
 	res, err := r.db.Exec(
-		`INSERT INTO rooms (slug, name, owner_id, is_public) VALUES (?, ?, ?, ?)`,
-		slug, name, ownerID, isPublic,
+		`INSERT INTO rooms (slug, name, owner_id, is_public, password_hash, scheduled_at, duration_minutes, recurrence, waiting_room_enabled, default_mic_off, default_cam_off)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		in.Slug, in.Name, in.OwnerID, in.IsPublic, in.PasswordHash, in.ScheduledAt, in.DurationMinutes, in.Recurrence, in.WaitingRoomEnabled, in.DefaultMicOff, in.DefaultCamOff,
 	)
 	if err != nil {
 		return nil, err
@@ -104,5 +142,10 @@ func (r *RoomRepo) Delete(id uint64) error {
 
 func (r *RoomRepo) SetLocked(id uint64, locked bool) error {
 	_, err := r.db.Exec(`UPDATE rooms SET is_locked = ? WHERE id = ?`, locked, id)
+	return err
+}
+
+func (r *RoomRepo) SetWaitingRoom(id uint64, enabled bool) error {
+	_, err := r.db.Exec(`UPDATE rooms SET waiting_room_enabled = ? WHERE id = ?`, enabled, id)
 	return err
 }

@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { useTranslation } from 'react-i18next'
 
 import { ApiError, api } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
@@ -10,19 +11,7 @@ import { Button } from '@/components/ui/Button'
 import { Field, Input, PasswordInput } from '@/components/ui/Field'
 import { Alert } from '@/components/ui/Alert'
 
-const schema = z.object({
-  display_name: z
-    .string()
-    .min(1, 'Nama belum diisi')
-    .max(100, 'Maksimal 100 karakter'),
-  email: z.string().min(1, 'Email belum diisi').email('Format email belum benar'),
-  password: z
-    .string()
-    .min(8, 'Minimal 8 karakter — biar aman')
-    .max(128, 'Kepanjangan, tahan diri'),
-})
-
-type FormData = z.infer<typeof schema>
+type FormData = { display_name: string; email: string; password: string }
 
 type RegisterResponse = {
   token: string
@@ -32,7 +21,24 @@ type RegisterResponse = {
 export function Register() {
   const navigate = useNavigate()
   const { login } = useAuth()
+  const { t } = useTranslation()
   const [serverError, setServerError] = useState<string | null>(null)
+
+  const schema = useMemo(
+    () =>
+      z.object({
+        display_name: z
+          .string()
+          .min(1, t('auth.errNameRequired'))
+          .max(100, t('auth.registerLong')),
+        email: z.string().min(1, t('auth.errEmailRequired')).email(t('auth.errEmailFormat')),
+        password: z
+          .string()
+          .min(8, t('auth.errPasswordShort'))
+          .max(128, t('auth.registerPasswordLong')),
+      }),
+    [t],
+  )
 
   const {
     register,
@@ -55,12 +61,12 @@ export function Register() {
       navigate('/dashboard', { replace: true })
     } catch (err) {
       if (err instanceof ApiError) {
-        if (err.status === 409) setServerError('Email ini sudah terdaftar. Mau langsung login aja?')
-        else if (err.status === 429)
-          setServerError('Wah pelan-pelan. Coba lagi beberapa saat.')
+        if (err.status === 409) setServerError(t('auth.registerEmailExists'))
+        else if (err.status === 429) setServerError(t('auth.registerSlowDown'))
+        else if (err.code === 'domain_not_allowed') setServerError(t('auth.errDomainNotAllowed'))
         else setServerError(err.message)
       } else {
-        setServerError('Tidak bisa terhubung ke server. Cek koneksimu.')
+        setServerError(t('auth.errGeneric'))
       }
     }
   }
@@ -68,11 +74,11 @@ export function Register() {
   return (
     <>
       <div className="space-y-1.5">
-        <h1 className="text-3xl font-semibold tracking-tight">Bikin akun</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">{t('auth.registerHeader')}</h1>
         <p className="text-[var(--color-ink-muted)] text-sm">
-          Sudah punya?{' '}
+          {t('auth.registerHaveAccount')}{' '}
           <Link to="/login" className="text-[var(--color-flame)] hover:underline underline-offset-2">
-            Masuk di sini
+            {t('auth.registerHaveAccountLink')}
           </Link>
         </p>
       </div>
@@ -80,24 +86,28 @@ export function Register() {
       <form onSubmit={handleSubmit(onSubmit)} className="mt-8 space-y-4" noValidate>
         {serverError && <Alert tone="error">{serverError}</Alert>}
 
-        <Field label="Nama panggilan" error={errors.display_name?.message} hint="Yang muncul di video saat kamu join">
+        <Field
+          label={t('auth.registerNameLabel')}
+          error={errors.display_name?.message}
+          hint={t('auth.registerNameHint')}
+        >
           {(p) => (
             <Input
               autoComplete="name"
               autoFocus
-              placeholder="Misal: Alice K."
+              placeholder={t('auth.registerNamePlaceholder')}
               {...p}
               {...register('display_name')}
             />
           )}
         </Field>
 
-        <Field label="Email" error={errors.email?.message}>
+        <Field label={t('auth.emailLabel')} error={errors.email?.message}>
           {(p) => (
             <Input
               type="email"
               autoComplete="email"
-              placeholder="kamu@contoh.com"
+              placeholder={t('auth.emailPlaceholder')}
               {...p}
               {...register('email')}
             />
@@ -105,14 +115,14 @@ export function Register() {
         </Field>
 
         <Field
-          label="Password"
+          label={t('auth.passwordLabel')}
           error={errors.password?.message}
-          hint="Minimal 8 karakter"
+          hint={t('auth.registerPasswordHint')}
         >
           {(p) => (
             <PasswordInput
               autoComplete="new-password"
-              placeholder="Bebas, asal kamu inget"
+              placeholder={t('auth.registerPasswordPlaceholder')}
               {...p}
               {...register('password')}
             />
@@ -120,11 +130,11 @@ export function Register() {
         </Field>
 
         <Button type="submit" loading={isSubmitting} className="w-full mt-2">
-          {isSubmitting ? 'Membuatkan akun...' : 'Bikin akun'}
+          {isSubmitting ? t('auth.registerCreatingButton') : t('auth.registerButton')}
         </Button>
 
         <p className="text-[11px] text-[var(--color-ink-faint)] text-center pt-2">
-          Lanjut artinya kamu setuju aplikasi ini cuma proyek pembelajaran. Belum production-ready.
+          {t('auth.registerFooter')}
         </p>
       </form>
     </>

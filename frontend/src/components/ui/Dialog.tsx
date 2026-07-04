@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 
 type Props = {
   open: boolean
@@ -8,6 +9,7 @@ type Props = {
 }
 
 export function Dialog({ open, onClose, title, children }: Props) {
+  const { t } = useTranslation()
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
@@ -42,7 +44,7 @@ export function Dialog({ open, onClose, title, children }: Props) {
             type="button"
             onClick={onClose}
             className="text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] text-lg leading-none -mr-1 px-1"
-            aria-label="Tutup"
+            aria-label={t('common.close')}
           >
             ×
           </button>

@@ -28,18 +28,39 @@ import (
 // @Failure      404       {object}  errorResponse
 // @Failure      502       {object}  errorResponse  "Egress error (room kosong, dll)"
 // @Router       /rooms/{idOrSlug}/recordings [post]
-func StartRecording(rooms *repo.RoomRepo, recordings *repo.RecordingRepo, eg *livekit.EgressClient) gin.HandlerFunc {
+type startRecordingRequest struct {
+	// Optional Egress composition template. "grid" (default), "speaker",
+	// "single-speaker". Empty/missing falls back to grid.
+	Layout string `json:"layout,omitempty"`
+}
+
+var validRecordingLayouts = map[string]bool{
+	"":               true, // → grid (default)
+	"grid":           true,
+	"speaker":        true,
+	"single-speaker": true,
+}
+
+func StartRecording(rooms *repo.RoomRepo, cohosts *repo.CohostRepo, audit *repo.AuditRepo, recordings *repo.RecordingRepo, eg *livekit.EgressClient) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		room, ok := requireOwner(c, rooms)
+		room, ok := requireOwnerOrCohost(c, rooms, cohosts)
 		if !ok {
 			return
 		}
 
 		userID, _ := middleware.UserIDFromCtx(c)
 
+		var req startRecordingRequest
+		// Body optional — empty body is fine, treat as defaults.
+		_ = c.ShouldBindJSON(&req)
+		if !validRecordingLayouts[req.Layout] {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "layout must be 'grid', 'speaker', or 'single-speaker'"})
+			return
+		}
+
 		filepath := fmt.Sprintf("%s/%s.mp4", room.Slug, time.Now().UTC().Format("20060102-150405"))
 
-		info, err := eg.StartRoomComposite(c.Request.Context(), room.Slug, filepath)
+		info, err := eg.StartRoomComposite(c.Request.Context(), room.Slug, filepath, req.Layout)
 		if err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": "egress: " + err.Error()})
 			return
@@ -50,6 +71,9 @@ func StartRecording(rooms *repo.RoomRepo, recordings *repo.RecordingRepo, eg *li
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save recording"})
 			return
 		}
+
+		emitAudit(audit, room.ID, userID, userID == room.OwnerID,
+			models.AuditActionRecordingStarted, stringPtr(strconv.FormatUint(rec.ID, 10)), nil)
 
 		c.JSON(http.StatusCreated, rec)
 	}
@@ -69,21 +93,15 @@ func StartRecording(rooms *repo.RoomRepo, recordings *repo.RecordingRepo, eg *li
 // @Failure      404  {object}  errorResponse
 // @Failure      502  {object}  errorResponse
 // @Router       /recordings/{id}/stop [post]
-func StopRecording(recordings *repo.RecordingRepo, rooms *repo.RoomRepo, eg *livekit.EgressClient) gin.HandlerFunc {
+func StopRecording(recordings *repo.RecordingRepo, rooms *repo.RoomRepo, cohosts *repo.CohostRepo, audit *repo.AuditRepo, eg *livekit.EgressClient) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		rec, ok := loadRecording(c, recordings)
 		if !ok {
 			return
 		}
 
-		room, err := rooms.GetByID(rec.RoomID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "room lookup failed"})
-			return
-		}
-		userID, _ := middleware.UserIDFromCtx(c)
-		if room.OwnerID != userID {
-			c.JSON(http.StatusForbidden, gin.H{"error": "only owner allowed"})
+		room, ok := canManageRecordingRoomWithRef(c, rec.RoomID, rooms, cohosts)
+		if !ok {
 			return
 		}
 
@@ -96,6 +114,10 @@ func StopRecording(recordings *repo.RecordingRepo, rooms *repo.RoomRepo, eg *liv
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update status"})
 			return
 		}
+
+		actorID, _ := middleware.UserIDFromCtx(c)
+		emitAudit(audit, room.ID, actorID, actorID == room.OwnerID,
+			models.AuditActionRecordingStopped, stringPtr(strconv.FormatUint(rec.ID, 10)), nil)
 
 		updated, _ := recordings.GetByID(rec.ID)
 		c.JSON(http.StatusOK, updated)
@@ -114,9 +136,9 @@ func StopRecording(recordings *repo.RecordingRepo, rooms *repo.RoomRepo, eg *liv
 // @Failure      403       {object}  errorResponse
 // @Failure      404       {object}  errorResponse
 // @Router       /rooms/{idOrSlug}/recordings [get]
-func ListRecordings(rooms *repo.RoomRepo, recordings *repo.RecordingRepo) gin.HandlerFunc {
+func ListRecordings(rooms *repo.RoomRepo, cohosts *repo.CohostRepo, recordings *repo.RecordingRepo) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		room, ok := requireOwner(c, rooms)
+		room, ok := requireOwnerOrCohost(c, rooms, cohosts)
 		if !ok {
 			return
 		}
@@ -143,26 +165,44 @@ func ListRecordings(rooms *repo.RoomRepo, recordings *repo.RecordingRepo) gin.Ha
 // @Failure      403  {object}  errorResponse
 // @Failure      404  {object}  errorResponse
 // @Router       /recordings/{id} [get]
-func GetRecording(recordings *repo.RecordingRepo, rooms *repo.RoomRepo) gin.HandlerFunc {
+func GetRecording(recordings *repo.RecordingRepo, rooms *repo.RoomRepo, cohosts *repo.CohostRepo) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		rec, ok := loadRecording(c, recordings)
 		if !ok {
 			return
 		}
 
-		room, err := rooms.GetByID(rec.RoomID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "room lookup failed"})
-			return
-		}
-		userID, _ := middleware.UserIDFromCtx(c)
-		if room.OwnerID != userID {
-			c.JSON(http.StatusForbidden, gin.H{"error": "only owner allowed"})
+		if _, ok := canManageRecordingRoomWithRef(c, rec.RoomID, rooms, cohosts); !ok {
 			return
 		}
 
 		c.JSON(http.StatusOK, rec)
 	}
+}
+
+// canManageRecordingRoomWithRef verifies the auth user is owner OR cohost of
+// the recording's room and returns a roomRef so the caller can pass it to
+// emitAudit. Writes 403/500 response on failure.
+func canManageRecordingRoomWithRef(c *gin.Context, roomID uint64, rooms *repo.RoomRepo, cohosts *repo.CohostRepo) (*roomRef, bool) {
+	room, err := rooms.GetByID(roomID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "room lookup failed"})
+		return nil, false
+	}
+	userID, _ := middleware.UserIDFromCtx(c)
+	if room.OwnerID == userID {
+		return &roomRef{ID: room.ID, Slug: room.Slug, OwnerID: room.OwnerID}, true
+	}
+	isCohost, err := cohosts.IsCohost(room.ID, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "permission check failed"})
+		return nil, false
+	}
+	if !isCohost {
+		c.JSON(http.StatusForbidden, gin.H{"error": "only owner or cohost allowed"})
+		return nil, false
+	}
+	return &roomRef{ID: room.ID, Slug: room.Slug, OwnerID: room.OwnerID}, true
 }
 
 func loadRecording(c *gin.Context, recordings *repo.RecordingRepo) (*models.Recording, bool) {

@@ -22,4 +22,14 @@ export default defineConfig({
     // Cloudflare tunnel host header beda; pre-allow biar Vite gak nolak.
     allowedHosts: true,
   },
+  // Sama dengan `server` di atas, tapi untuk `npm run preview` (production build).
+  // Pakai ini buat demo — HMR mati, peserta gak ke-disconnect saat code di-save.
+  preview: {
+    host: true,
+    port: 3000,
+    proxy: {
+      '/api': 'http://localhost:8080',
+    },
+    allowedHosts: true,
+  },
 })

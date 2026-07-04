@@ -24,13 +24,17 @@ type EgressInfo struct {
 	Filepath string `json:"filepath"`
 }
 
-// StartRoomComposite kicks off a room-composite recording. Storage is taken
-// from the Egress service's default config (egress.yaml -> s3) since we don't
-// set per-request output credentials.
-func (e *EgressClient) StartRoomComposite(ctx context.Context, room, filepath string) (*EgressInfo, error) {
+// StartRoomComposite kicks off a room-composite recording. `layout` picks
+// the Egress composition template: "grid" (default — every participant gets
+// equal tile), "speaker" (focus on the active speaker), "single-speaker"
+// (only the speaker, no others). Empty string falls back to "grid".
+func (e *EgressClient) StartRoomComposite(ctx context.Context, room, filepath, layout string) (*EgressInfo, error) {
+	if layout == "" {
+		layout = "grid"
+	}
 	req := &livekit.RoomCompositeEgressRequest{
 		RoomName: room,
-		Layout:   "grid",
+		Layout:   layout,
 		FileOutputs: []*livekit.EncodedFileOutput{
 			{
 				FileType: livekit.EncodedFileType_MP4,

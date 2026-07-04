@@ -8,6 +8,7 @@ import (
 
 	"videoconf-backend/internal/livekit"
 	"videoconf-backend/internal/middleware"
+	"videoconf-backend/internal/models"
 	"videoconf-backend/internal/repo"
 )
 
@@ -24,9 +25,9 @@ import (
 // @Failure      404       {object}  errorResponse
 // @Failure      502       {object}  errorResponse  "LiveKit unreachable"
 // @Router       /rooms/{idOrSlug}/participants [get]
-func ListParticipants(rooms *repo.RoomRepo, lk *livekit.Client) gin.HandlerFunc {
+func ListParticipants(rooms *repo.RoomRepo, cohosts *repo.CohostRepo, lk *livekit.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		room, ok := requireOwner(c, rooms)
+		room, ok := requireOwnerOrCohost(c, rooms, cohosts)
 		if !ok {
 			return
 		}
@@ -62,9 +63,9 @@ type muteRequest struct {
 // @Failure      404       {object}  errorResponse  "participant gak connect"
 // @Failure      502       {object}  errorResponse  "LiveKit error"
 // @Router       /rooms/{idOrSlug}/participants/{identity}/mute [post]
-func MuteParticipant(rooms *repo.RoomRepo, lk *livekit.Client) gin.HandlerFunc {
+func MuteParticipant(rooms *repo.RoomRepo, cohosts *repo.CohostRepo, audit *repo.AuditRepo, lk *livekit.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		room, ok := requireOwner(c, rooms)
+		room, ok := requireOwnerOrCohost(c, rooms, cohosts)
 		if !ok {
 			return
 		}
@@ -80,8 +81,8 @@ func MuteParticipant(rooms *repo.RoomRepo, lk *livekit.Client) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		if req.Source != "" && req.Source != "audio" && req.Source != "video" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "source must be 'audio', 'video', or empty"})
+		if req.Source != "" && req.Source != "audio" && req.Source != "video" && req.Source != "screen_share" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "source must be 'audio', 'video', 'screen_share', or empty"})
 			return
 		}
 
@@ -94,6 +95,18 @@ func MuteParticipant(rooms *repo.RoomRepo, lk *livekit.Client) gin.HandlerFunc {
 			c.JSON(http.StatusBadGateway, gin.H{"error": "livekit: " + err.Error()})
 			return
 		}
+
+		actorID, _ := middleware.UserIDFromCtx(c)
+		source := req.Source
+		if source == "" {
+			source = "all"
+		}
+		detail := source
+		if !req.Muted {
+			detail = "unmuted:" + source
+		}
+		emitAudit(audit, room.ID, actorID, actorID == room.OwnerID,
+			models.AuditActionParticipantMuted, stringPtr(identity), stringPtr(detail))
 
 		c.JSON(http.StatusOK, gin.H{"muted_tracks": count})
 	}
@@ -112,9 +125,9 @@ func MuteParticipant(rooms *repo.RoomRepo, lk *livekit.Client) gin.HandlerFunc {
 // @Failure      404  {object}  errorResponse
 // @Failure      502  {object}  errorResponse
 // @Router       /rooms/{idOrSlug}/participants/{identity} [delete]
-func KickParticipant(rooms *repo.RoomRepo, lk *livekit.Client) gin.HandlerFunc {
+func KickParticipant(rooms *repo.RoomRepo, cohosts *repo.CohostRepo, audit *repo.AuditRepo, lk *livekit.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		room, ok := requireOwner(c, rooms)
+		room, ok := requireOwnerOrCohost(c, rooms, cohosts)
 		if !ok {
 			return
 		}
@@ -129,6 +142,11 @@ func KickParticipant(rooms *repo.RoomRepo, lk *livekit.Client) gin.HandlerFunc {
 			c.JSON(http.StatusBadGateway, gin.H{"error": "livekit: " + err.Error()})
 			return
 		}
+
+		actorID, _ := middleware.UserIDFromCtx(c)
+		emitAudit(audit, room.ID, actorID, actorID == room.OwnerID,
+			models.AuditActionParticipantKicked, stringPtr(identity), nil)
+
 		c.Status(http.StatusNoContent)
 	}
 }
@@ -145,8 +163,8 @@ func KickParticipant(rooms *repo.RoomRepo, lk *livekit.Client) gin.HandlerFunc {
 // @Failure      403       {object}  errorResponse
 // @Failure      404       {object}  errorResponse
 // @Router       /rooms/{idOrSlug}/lock [post]
-func LockRoom(rooms *repo.RoomRepo) gin.HandlerFunc {
-	return setLocked(rooms, true)
+func LockRoom(rooms *repo.RoomRepo, cohosts *repo.CohostRepo, audit *repo.AuditRepo) gin.HandlerFunc {
+	return setLocked(rooms, cohosts, audit, true)
 }
 
 // UnlockRoom godoc
@@ -161,13 +179,13 @@ func LockRoom(rooms *repo.RoomRepo) gin.HandlerFunc {
 // @Failure      403       {object}  errorResponse
 // @Failure      404       {object}  errorResponse
 // @Router       /rooms/{idOrSlug}/unlock [post]
-func UnlockRoom(rooms *repo.RoomRepo) gin.HandlerFunc {
-	return setLocked(rooms, false)
+func UnlockRoom(rooms *repo.RoomRepo, cohosts *repo.CohostRepo, audit *repo.AuditRepo) gin.HandlerFunc {
+	return setLocked(rooms, cohosts, audit, false)
 }
 
-func setLocked(rooms *repo.RoomRepo, locked bool) gin.HandlerFunc {
+func setLocked(rooms *repo.RoomRepo, cohosts *repo.CohostRepo, audit *repo.AuditRepo, locked bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		room, ok := requireOwner(c, rooms)
+		room, ok := requireOwnerOrCohost(c, rooms, cohosts)
 		if !ok {
 			return
 		}
@@ -175,6 +193,13 @@ func setLocked(rooms *repo.RoomRepo, locked bool) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update lock"})
 			return
 		}
+		actorID, _ := middleware.UserIDFromCtx(c)
+		action := models.AuditActionRoomUnlocked
+		if locked {
+			action = models.AuditActionRoomLocked
+		}
+		emitAudit(audit, room.ID, actorID, actorID == room.OwnerID, action, nil, nil)
+
 		c.JSON(http.StatusOK, gin.H{"is_locked": locked})
 	}
 }
@@ -191,10 +216,35 @@ func requireOwner(c *gin.Context, rooms *repo.RoomRepo) (*roomRef, bool) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "only owner allowed"})
 		return nil, false
 	}
-	return &roomRef{ID: room.ID, Slug: room.Slug}, true
+	return &roomRef{ID: room.ID, Slug: room.Slug, OwnerID: room.OwnerID}, true
+}
+
+// requireOwnerOrCohost is the relaxed variant used for shared host controls
+// (lock, mute, kick, recording, waiting room admit/deny). Owner OR any cohost
+// passes; everyone else gets 403.
+func requireOwnerOrCohost(c *gin.Context, rooms *repo.RoomRepo, cohosts *repo.CohostRepo) (*roomRef, bool) {
+	room, ok := lookupRoom(c, rooms)
+	if !ok {
+		return nil, false
+	}
+	userID, _ := middleware.UserIDFromCtx(c)
+	if room.OwnerID == userID {
+		return &roomRef{ID: room.ID, Slug: room.Slug, OwnerID: room.OwnerID}, true
+	}
+	isCohost, err := cohosts.IsCohost(room.ID, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "permission check failed"})
+		return nil, false
+	}
+	if !isCohost {
+		c.JSON(http.StatusForbidden, gin.H{"error": "only owner or cohost allowed"})
+		return nil, false
+	}
+	return &roomRef{ID: room.ID, Slug: room.Slug, OwnerID: room.OwnerID}, true
 }
 
 type roomRef struct {
-	ID   uint64
-	Slug string
+	ID      uint64
+	Slug    string
+	OwnerID uint64
 }

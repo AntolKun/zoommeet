@@ -17,6 +17,26 @@ import (
 
 const tokenTTL = 24 * time.Hour
 
+// isEmailDomainAllowed returns true if the email's domain is in the allowlist
+// (or the allowlist is empty, meaning "allow any"). Compare lowercase since
+// callers store domains lowercased.
+func isEmailDomainAllowed(email string, allowed []string) bool {
+	if len(allowed) == 0 {
+		return true
+	}
+	at := strings.LastIndex(email, "@")
+	if at < 0 || at == len(email)-1 {
+		return false
+	}
+	domain := strings.ToLower(email[at+1:])
+	for _, d := range allowed {
+		if domain == d {
+			return true
+		}
+	}
+	return false
+}
+
 type registerRequest struct {
 	Email       string `json:"email" binding:"required,email"`
 	Password    string `json:"password" binding:"required,min=8"`
@@ -34,9 +54,10 @@ type authResponse struct {
 }
 
 type userPayload struct {
-	ID          uint64 `json:"id"`
-	Email       string `json:"email"`
-	DisplayName string `json:"display_name"`
+	ID          uint64  `json:"id"`
+	Email       string  `json:"email"`
+	DisplayName string  `json:"display_name"`
+	AvatarURL   *string `json:"avatar_url,omitempty"`
 }
 
 // Register godoc
@@ -60,6 +81,15 @@ func Register(cfg *config.Config, users *repo.UserRepo) gin.HandlerFunc {
 		}
 
 		req.Email = strings.ToLower(strings.TrimSpace(req.Email))
+
+		// Optional org-policy: restrict registration to whitelisted email domains.
+		if !isEmailDomainAllowed(req.Email, cfg.AllowedRegisterDomains) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "email domain not allowed for registration",
+				"code":  "domain_not_allowed",
+			})
+			return
+		}
 
 		hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 		if err != nil {
@@ -90,6 +120,7 @@ func Register(cfg *config.Config, users *repo.UserRepo) gin.HandlerFunc {
 				ID:          user.ID,
 				Email:       user.Email,
 				DisplayName: user.DisplayName,
+				AvatarURL:   user.AvatarURL,
 			},
 		})
 	}
@@ -144,6 +175,7 @@ func Login(cfg *config.Config, users *repo.UserRepo) gin.HandlerFunc {
 				ID:          user.ID,
 				Email:       user.Email,
 				DisplayName: user.DisplayName,
+				AvatarURL:   user.AvatarURL,
 			},
 		})
 	}

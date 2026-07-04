@@ -1,27 +1,28 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { useAuth } from '@/hooks/useAuth'
 
 export function Home() {
   const { isAuthenticated } = useAuth()
+  const { t } = useTranslation()
 
   return (
     <div className="mx-auto max-w-5xl px-5 w-full">
       <section className="pt-16 pb-12 grid lg:grid-cols-[1.4fr_1fr] gap-12 items-start">
         <div>
           <p className="font-mono text-xs text-[var(--color-flame)] mb-4 tracking-wide">
-            //  rapat tanpa drama install
+            {t('home.tagline')}
           </p>
           <h1 className="text-5xl sm:text-6xl font-semibold tracking-tight leading-[1.05]">
-            Buka link.
+            {t('home.heroLine1')}
             <br />
-            Masuk meeting.
+            {t('home.heroLine2')}
             <br />
-            <span className="text-[var(--color-ink-muted)]">Selesai.</span>
+            <span className="text-[var(--color-ink-muted)]">{t('home.heroLine3')}</span>
           </h1>
           <p className="mt-6 text-[var(--color-ink-soft)] text-[17px] max-w-md leading-relaxed">
-            Self-hosted video conferencing yang gak ngerepotin. Login, bikin room,
-            kirim link ke siapa aja — mereka tinggal klik.
+            {t('home.heroDesc')}
           </p>
 
           <div className="mt-8 flex items-center gap-3">
@@ -30,7 +31,7 @@ export function Home() {
                 to="/dashboard"
                 className="inline-flex items-center gap-2 px-5 h-11 rounded-md bg-[var(--color-flame)] text-[var(--color-canvas)] font-medium hover:bg-[var(--color-flame-soft)] transition-colors"
               >
-                Buka dashboard
+                {t('home.ctaDashboard')}
                 <span aria-hidden>→</span>
               </Link>
             ) : (
@@ -39,14 +40,14 @@ export function Home() {
                   to="/register"
                   className="inline-flex items-center gap-2 px-5 h-11 rounded-md bg-[var(--color-flame)] text-[var(--color-canvas)] font-medium hover:bg-[var(--color-flame-soft)] transition-colors"
                 >
-                  Mulai gratis
+                  {t('home.ctaStart')}
                   <span aria-hidden>→</span>
                 </Link>
                 <Link
                   to="/login"
                   className="inline-flex items-center px-5 h-11 rounded-md border border-[var(--color-line)] text-[var(--color-ink)] hover:border-[var(--color-line-strong)] transition-colors"
                 >
-                  Sudah punya akun
+                  {t('home.ctaLogin')}
                 </Link>
               </>
             )}
@@ -57,14 +58,14 @@ export function Home() {
       </section>
 
       <section className="border-t border-[var(--color-line)] py-10 grid sm:grid-cols-3 gap-x-8 gap-y-6 text-sm">
-        <Note number="01" title="Tanpa download">
-          Jalan di browser. Tinggal kirim link ke peserta.
+        <Note number="01" title={t('home.note1Title')}>
+          {t('home.note1Body')}
         </Note>
-        <Note number="02" title="Self-hosted">
-          Server kamu, data kamu. Pakai LiveKit di belakang.
+        <Note number="02" title={t('home.note2Title')}>
+          {t('home.note2Body')}
         </Note>
-        <Note number="03" title="Open source">
-          Modif sesuai kebutuhan. Gak terkunci ke siapa pun.
+        <Note number="03" title={t('home.note3Title')}>
+          {t('home.note3Body')}
         </Note>
       </section>
     </div>
@@ -82,17 +83,17 @@ function Note({ number, title, children }: { number: string; title: string; chil
 }
 
 function Aside() {
+  const { t } = useTranslation()
   return (
     <div className="relative">
-      {/* Mock meeting card — quick visual punch without using stock illustrations */}
       <div className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] overflow-hidden">
         <div className="px-4 py-3 border-b border-[var(--color-line)] flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-[var(--color-bad)] animate-pulse" />
-            <span className="text-xs text-[var(--color-ink-muted)] font-mono">REC · 12:34</span>
+            <span className="text-xs text-[var(--color-ink-muted)] font-mono">{t('home.mockRec')}</span>
           </div>
           <span className="text-[11px] text-[var(--color-ink-faint)] font-mono">
-            standup-jumat
+            {t('home.mockSlug')}
           </span>
         </div>
 
@@ -111,12 +112,12 @@ function Aside() {
           <PillIcon label="mic" active />
           <PillIcon label="cam" active />
           <PillIcon label="share" />
-          <span className="ml-auto text-[11px] font-mono">4 ikut</span>
+          <span className="ml-auto text-[11px] font-mono">{t('home.mockFollowers')}</span>
         </div>
       </div>
 
       <p className="mt-3 text-[11px] font-mono text-[var(--color-ink-faint)] text-right">
-        // contoh ruang meeting
+        {t('home.mockComment')}
       </p>
     </div>
   )

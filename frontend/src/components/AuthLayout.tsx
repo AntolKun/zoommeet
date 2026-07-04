@@ -1,12 +1,14 @@
 import { Link, Outlet } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 
 export function AuthLayout() {
+  const { t } = useTranslation()
   return (
     <div className="min-h-svh grid lg:grid-cols-[1fr_1.1fr]">
       {/* Left: form column */}
       <div className="flex flex-col p-6 sm:p-10">
         <Link to="/" className="inline-flex items-center gap-2 self-start text-sm text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]">
-          <span aria-hidden>←</span> kembali
+          <span aria-hidden>←</span> {t('common.back').toLowerCase()}
         </Link>
 
         <div className="flex-1 flex flex-col justify-center max-w-sm w-full mx-auto py-10">
@@ -14,7 +16,7 @@ export function AuthLayout() {
         </div>
 
         <p className="text-[11px] font-mono text-[var(--color-ink-faint)] self-start">
-          videoconf · v0.1
+          videoconf · {t('nav.version')}
         </p>
       </div>
 
@@ -24,12 +26,10 @@ export function AuthLayout() {
         <div className="relative flex flex-col justify-end p-10 w-full">
           <blockquote className="max-w-md">
             <p className="text-2xl leading-snug font-medium text-[var(--color-ink)]">
-              "Aku capek install Zoom, install Teams, install lagi yang lain.
-              <br />
-              Ini cuma butuh link."
+              {t('auth.quote')}
             </p>
             <footer className="mt-4 text-[13px] text-[var(--color-ink-muted)]">
-              — pengguna pertama, sebelum jadi pengguna kedua
+              {t('auth.quoteAttribution')}
             </footer>
           </blockquote>
         </div>
