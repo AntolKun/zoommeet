@@ -520,7 +520,11 @@
     "editTitle": "编辑",
     "deleteTitle": "删除",
     "insertEmoji": "插入 {{emoji}}",
-    "emojiTitle": "表情"
+    "emojiTitle": "表情",
+    "attachTitle": "附加文件",
+    "attachRemove": "取消附件",
+    "attachTooBig": "文件过大（最大 10 MB）",
+    "attachUploadFail": "文件上传失败"
   },
   "participants": {
     "title": "参与者",

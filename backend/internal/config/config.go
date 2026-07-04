@@ -25,12 +25,13 @@ type Config struct {
 	// MinIO connection — used for avatar uploads. Endpoint is the server-side
 	// host:port (e.g. "minio:9000" inside docker), PublicBaseURL is what
 	// clients use to fetch the file (e.g. "http://localhost:9000").
-	MinIOEndpoint      string
-	MinIOAccessKey     string
-	MinIOSecretKey     string
-	MinIOUseSSL        bool
-	MinIOAvatarBucket  string
-	MinIOPublicBaseURL string
+	MinIOEndpoint         string
+	MinIOAccessKey        string
+	MinIOSecretKey        string
+	MinIOUseSSL           bool
+	MinIOAvatarBucket     string
+	MinIOAttachmentBucket string
+	MinIOPublicBaseURL    string
 }
 
 func Load() *Config {
@@ -54,6 +55,7 @@ func Load() *Config {
 		MinIOSecretKey:         getEnv("MINIO_SECRET_KEY", "minioadmin"),
 		MinIOUseSSL:            getEnv("MINIO_USE_SSL", "false") == "true",
 		MinIOAvatarBucket:      getEnv("MINIO_AVATAR_BUCKET", "avatars"),
+		MinIOAttachmentBucket:  getEnv("MINIO_ATTACHMENT_BUCKET", "chat-attachments"),
 		MinIOPublicBaseURL:     getEnv("MINIO_PUBLIC_BASE_URL", "http://localhost:9000"),
 	}
 }

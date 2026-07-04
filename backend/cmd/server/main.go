@@ -66,7 +66,7 @@ func main() {
 	questions := repo.NewQuestionRepo(conn)
 
 	// MinIO is optional — server still boots if config is missing, but avatar
-	// upload endpoints return 503 in that case.
+	// + attachment upload endpoints return 503 in that case.
 	minioStore, mErr := storage.NewMinIO(
 		cfg.MinIOEndpoint, cfg.MinIOAccessKey, cfg.MinIOSecretKey,
 		cfg.MinIOAvatarBucket, cfg.MinIOPublicBaseURL, cfg.MinIOUseSSL,
@@ -78,6 +78,23 @@ func main() {
 		ctxBoot, cancelBoot := context.WithTimeout(context.Background(), 5*time.Second)
 		if err := minioStore.EnsureBucket(ctxBoot); err != nil {
 			log.Printf("minio bucket setup failed: %v", err)
+		}
+		cancelBoot()
+	}
+
+	// Separate MinIO client for chat attachments so avatars + attachments live
+	// in isolated buckets (cleaner policies + easier future retention rules).
+	attachStore, aErr := storage.NewMinIO(
+		cfg.MinIOEndpoint, cfg.MinIOAccessKey, cfg.MinIOSecretKey,
+		cfg.MinIOAttachmentBucket, cfg.MinIOPublicBaseURL, cfg.MinIOUseSSL,
+	)
+	if aErr != nil {
+		log.Printf("minio attachment init failed (chat upload disabled): %v", aErr)
+		attachStore = nil
+	} else {
+		ctxBoot, cancelBoot := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := attachStore.EnsureBucket(ctxBoot); err != nil {
+			log.Printf("minio attachment bucket setup failed: %v", err)
 		}
 		cancelBoot()
 	}
@@ -138,6 +155,10 @@ func main() {
 			protected.GET("/rooms/:idOrSlug", handlers.GetRoom(rooms, cohosts))
 			protected.DELETE("/rooms/:idOrSlug", handlers.DeleteRoom(rooms))
 			protected.POST("/rooms/:idOrSlug/messages", handlers.SendMessage(rooms, messages, users))
+			protected.POST("/rooms/:idOrSlug/attachments", handlers.UploadAttachment(rooms, attachStore))
+			protected.GET("/rooms/:idOrSlug/messages/pinned", handlers.ListPinnedMessages(rooms, messages))
+			protected.POST("/messages/:id/pin", handlers.PinMessage(rooms, cohosts, messages))
+			protected.POST("/messages/:id/unpin", handlers.UnpinMessage(rooms, cohosts, messages))
 			protected.GET("/rooms/:idOrSlug/messages", handlers.ListMessages(rooms, messages))
 			protected.PATCH("/messages/:id", handlers.EditMessage(rooms, messages))
 			protected.DELETE("/messages/:id", handlers.DeleteMessage(rooms, cohosts, messages))

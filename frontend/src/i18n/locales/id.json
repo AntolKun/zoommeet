@@ -520,7 +520,11 @@
     "editTitle": "Edit",
     "deleteTitle": "Hapus",
     "insertEmoji": "Sisipkan {{emoji}}",
-    "emojiTitle": "Emoji"
+    "emojiTitle": "Emoji",
+    "attachTitle": "Lampirkan file",
+    "attachRemove": "Batalkan lampiran",
+    "attachTooBig": "File terlalu besar (maks 10 MB)",
+    "attachUploadFail": "Gagal upload file"
   },
   "participants": {
     "title": "Peserta",

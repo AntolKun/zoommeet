@@ -520,7 +520,11 @@
     "editTitle": "Edit",
     "deleteTitle": "Delete",
     "insertEmoji": "Insert {{emoji}}",
-    "emojiTitle": "Emoji"
+    "emojiTitle": "Emoji",
+    "attachTitle": "Attach file",
+    "attachRemove": "Cancel attachment",
+    "attachTooBig": "File too large (max 10 MB)",
+    "attachUploadFail": "File upload failed"
   },
   "participants": {
     "title": "Participants",

@@ -19,10 +19,18 @@ const (
 )
 
 type sendMessageRequest struct {
-	Body string `json:"body" binding:"required"`
+	Body string `json:"body"`
 	// Optional: when set, the message is a DM only visible to sender and
 	// recipient. recipient_id must belong to an auth user with access to the room.
 	RecipientID *uint64 `json:"recipient_id,omitempty"`
+	// Optional file attachment. Client uploads first via /rooms/:idOrSlug/attachments,
+	// then references the returned URL here. Body may be empty when only attaching.
+	AttachmentURL  *string `json:"attachment_url,omitempty"`
+	AttachmentName *string `json:"attachment_name,omitempty"`
+	AttachmentType *string `json:"attachment_type,omitempty"`
+	AttachmentSize *uint64 `json:"attachment_size,omitempty"`
+	// Optional reply-to reference. Must belong to the same room.
+	ReplyToMessageID *uint64 `json:"reply_to_message_id,omitempty"`
 }
 
 // SendMessage godoc
@@ -56,8 +64,9 @@ func SendMessage(rooms *repo.RoomRepo, messages *repo.MessageRepo, users *repo.U
 		}
 
 		body := strings.TrimSpace(req.Body)
-		if body == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "body cannot be empty"})
+		hasAttachment := req.AttachmentURL != nil && *req.AttachmentURL != ""
+		if body == "" && !hasAttachment {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "body or attachment required"})
 			return
 		}
 		if len(body) > maxMessageLen {
@@ -80,7 +89,17 @@ func SendMessage(rooms *repo.RoomRepo, messages *repo.MessageRepo, users *repo.U
 			}
 		}
 
-		msg, err := messages.Create(room.ID, userID, req.RecipientID, body)
+		msg, err := messages.Create(repo.CreateMessageInput{
+			RoomID:           room.ID,
+			SenderID:         userID,
+			RecipientID:      req.RecipientID,
+			Body:             body,
+			AttachmentURL:    req.AttachmentURL,
+			AttachmentName:   req.AttachmentName,
+			AttachmentType:   req.AttachmentType,
+			AttachmentSize:   req.AttachmentSize,
+			ReplyToMessageID: req.ReplyToMessageID,
+		})
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save message"})
 			return
@@ -401,4 +420,61 @@ func roomHostCheck(rooms *repo.RoomRepo, cohosts *repo.CohostRepo, roomID, userI
 		return true, nil
 	}
 	return cohosts.IsCohost(roomID, userID)
+}
+
+// PinMessage marks a message as pinned. Host-only (owner or cohost).
+func PinMessage(rooms *repo.RoomRepo, cohosts *repo.CohostRepo, messages *repo.MessageRepo) gin.HandlerFunc {
+	return setMessagePinned(rooms, cohosts, messages, true)
+}
+
+// UnpinMessage clears the pinned flag. Host-only.
+func UnpinMessage(rooms *repo.RoomRepo, cohosts *repo.CohostRepo, messages *repo.MessageRepo) gin.HandlerFunc {
+	return setMessagePinned(rooms, cohosts, messages, false)
+}
+
+func setMessagePinned(rooms *repo.RoomRepo, cohosts *repo.CohostRepo, messages *repo.MessageRepo, pinned bool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		msgID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+		if err != nil || msgID == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+			return
+		}
+		msg, err := messages.GetByID(msgID)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "message not found"})
+			return
+		}
+		userID, _ := middleware.UserIDFromCtx(c)
+		isHost, err := roomHostCheck(rooms, cohosts, msg.RoomID, userID)
+		if err != nil || !isHost {
+			c.JSON(http.StatusForbidden, gin.H{"error": "only host can pin messages"})
+			return
+		}
+		if err := messages.SetPinned(msgID, pinned); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update pin state"})
+			return
+		}
+		updated, err := messages.GetByID(msgID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "fetch failed"})
+			return
+		}
+		c.JSON(http.StatusOK, updated)
+	}
+}
+
+// ListPinnedMessages returns pinned messages for a room. Anyone with room access can view.
+func ListPinnedMessages(rooms *repo.RoomRepo, messages *repo.MessageRepo) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		room, ok := RequireRoomAccess(c, rooms)
+		if !ok {
+			return
+		}
+		list, err := messages.ListPinned(room.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list pinned"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"messages": list})
+	}
 }

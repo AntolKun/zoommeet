@@ -31,6 +31,8 @@ export type ChatMessage = ChatPayload & {
   deleted_at?: string
   /** Emoji → list of user_ids that reacted. */
   reactions?: Record<string, number[]>
+  /** Host-pinned marker. Live-synced across clients via vc.chat-update. */
+  is_pinned?: boolean
 }
 
 type BackendMessage = {
@@ -39,6 +41,14 @@ type BackendMessage = {
   sender_id: number
   recipient_id?: number
   body: string
+  attachment_url?: string
+  attachment_name?: string
+  attachment_type?: string
+  attachment_size?: number
+  reply_to_message_id?: number
+  reply_to_body?: string
+  reply_to_sender?: string
+  is_pinned?: boolean
   edited_at?: string
   deleted_at?: string
   created_at: string
@@ -47,11 +57,22 @@ type BackendMessage = {
   reactions?: Record<string, number[]>
 }
 
+export type ChatAttachment = {
+  url: string
+  name: string
+  type: string
+  size: number
+}
+
 type SendOptions = {
   /** Auth user.id to direct-message. Identity (LK) is derived from this for
    *  targeted data-channel delivery. */
   recipientId?: number
   recipientName?: string
+  /** Optional file attachment. Client must call uploadAttachment first. */
+  attachment?: ChatAttachment
+  /** Optional reply-to reference. Client already has body/sender for preview. */
+  replyTo?: { id: number; body: string; sender: string }
 }
 
 type ChatContextValue = {
@@ -60,6 +81,10 @@ type ChatContextValue = {
   editMessage: (messageId: number, newBody: string) => Promise<void>
   deleteMessage: (messageId: number) => Promise<void>
   toggleReaction: (messageId: number, emoji: string) => Promise<void>
+  /** Upload a file to attach to a subsequent send() call. Throws on failure. */
+  uploadAttachment: (file: File) => Promise<ChatAttachment>
+  /** Host-only. Flips the message's pinned state; server enforces auth. */
+  togglePin: (messageId: number, currentlyPinned: boolean) => Promise<void>
   latest: ChatMessage | null
   historyLoaded: boolean
 }
@@ -123,6 +148,12 @@ export function RoomChatProvider({
     )
   }, [])
 
+  const applyPin = useCallback((messageId: number, isPinned: boolean) => {
+    setMessages((prev) =>
+      prev.map((m) => (m.id === messageId ? { ...m, is_pinned: isPinned } : m)),
+    )
+  }, [])
+
   const applyReaction = useCallback(
     (messageId: number, emoji: string, userId: number, added: boolean) => {
       setMessages((prev) =>
@@ -175,6 +206,14 @@ export function RoomChatProvider({
             edited_at: m.edited_at,
             deleted_at: m.deleted_at,
             reactions: m.reactions,
+            attachment_url: m.attachment_url,
+            attachment_name: m.attachment_name,
+            attachment_type: m.attachment_type,
+            attachment_size: m.attachment_size,
+            reply_to_message_id: m.reply_to_message_id,
+            reply_to_body: m.reply_to_body,
+            reply_to_sender: m.reply_to_sender,
+            is_pinned: m.is_pinned,
             isMine: m.sender_id === myId,
           })
         }
@@ -211,6 +250,7 @@ export function RoomChatProvider({
         else if (upd.kind === 'delete') applyDelete(upd.message_id, upd.deleted_at)
         else if (upd.kind === 'react')
           applyReaction(upd.message_id, upd.emoji, upd.user_id, upd.added)
+        else if (upd.kind === 'pin') applyPin(upd.message_id, upd.is_pinned)
         return
       }
     }
@@ -218,12 +258,14 @@ export function RoomChatProvider({
     return () => {
       room.off(RoomEvent.DataReceived, onData)
     }
-  }, [room, addMessage, applyEdit, applyDelete, applyReaction])
+  }, [room, addMessage, applyEdit, applyDelete, applyReaction, applyPin])
 
   const send = useCallback(
     async (rawText: string, opts?: SendOptions) => {
       const text = rawText.trim()
-      if (!text || !localParticipant) return
+      // Attachment-only messages are allowed — body can be empty when a file is present.
+      if (!localParticipant) return
+      if (!text && !opts?.attachment) return
       if (text.length > 2000) return
 
       const senderName =
@@ -237,6 +279,15 @@ export function RoomChatProvider({
         try {
           const body: Record<string, unknown> = { body: text }
           if (opts?.recipientId) body.recipient_id = opts.recipientId
+          if (opts?.attachment) {
+            body.attachment_url = opts.attachment.url
+            body.attachment_name = opts.attachment.name
+            body.attachment_type = opts.attachment.type
+            body.attachment_size = opts.attachment.size
+          }
+          if (opts?.replyTo) {
+            body.reply_to_message_id = opts.replyTo.id
+          }
           const msg = await api<BackendMessage>(`/rooms/${slug}/messages`, {
             method: 'POST',
             body,
@@ -257,6 +308,13 @@ export function RoomChatProvider({
         recipient_id: opts?.recipientId,
         recipient_name: opts?.recipientName,
         created_at: createdAt,
+        attachment_url: opts?.attachment?.url,
+        attachment_name: opts?.attachment?.name,
+        attachment_type: opts?.attachment?.type,
+        attachment_size: opts?.attachment?.size,
+        reply_to_message_id: opts?.replyTo?.id,
+        reply_to_body: opts?.replyTo?.body,
+        reply_to_sender: opts?.replyTo?.sender,
       }
 
       addMessage(payload, true)
@@ -373,9 +431,50 @@ export function RoomChatProvider({
     [messages],
   )
 
+  const togglePin = useCallback(
+    async (messageId: number, currentlyPinned: boolean) => {
+      if (!localParticipant) return
+      const nextState = !currentlyPinned
+      try {
+        await api<BackendMessage>(`/messages/${messageId}/${nextState ? 'pin' : 'unpin'}`, {
+          method: 'POST',
+        })
+        applyPin(messageId, nextState)
+        const bytes = encodeChatUpdate({ kind: 'pin', message_id: messageId, is_pinned: nextState })
+        await localParticipant
+          .publishData(bytes, { reliable: true, topic: CHAT_UPDATE_TOPIC })
+          .catch(() => {})
+      } catch {
+        // Server rejected (not host, etc.) — leave state alone.
+      }
+    },
+    [localParticipant, applyPin],
+  )
+
+  const uploadAttachment = useCallback(
+    async (file: File): Promise<ChatAttachment> => {
+      if (!slug) throw new Error('no room')
+      // JSON api() helper doesn't support multipart; hit fetch directly.
+      const form = new FormData()
+      form.append('file', file)
+      const token = localStorage.getItem('videoconf.token')
+      const base = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080/api'
+      const res = await fetch(`${base}/rooms/${slug}/attachments`, {
+        method: 'POST',
+        body: form,
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+      const text = await res.text()
+      const data = text ? JSON.parse(text) : {}
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
+      return data as ChatAttachment
+    },
+    [slug],
+  )
+
   const value = useMemo(
-    () => ({ messages, send, editMessage, deleteMessage, toggleReaction, latest, historyLoaded }),
-    [messages, send, editMessage, deleteMessage, toggleReaction, latest, historyLoaded],
+    () => ({ messages, send, editMessage, deleteMessage, toggleReaction, uploadAttachment, latest, historyLoaded }),
+    [messages, send, editMessage, deleteMessage, toggleReaction, uploadAttachment, latest, historyLoaded],
   )
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>

@@ -26,12 +26,23 @@ export type ChatPayload = {
   created_at: string
   /** Client-generated UUID for dedup against history fetched later. */
   uid: string
+  /** Optional attached file — image/PDF/doc. Present when the message
+   *  carries a file uploaded via POST /rooms/:slug/attachments. */
+  attachment_url?: string
+  attachment_name?: string
+  attachment_type?: string
+  attachment_size?: number
+  /** Optional reply-to reference (quoted message). */
+  reply_to_message_id?: number
+  reply_to_body?: string
+  reply_to_sender?: string
 }
 
 export type ChatUpdate =
   | { kind: 'edit'; message_id: number; body: string; edited_at: string }
   | { kind: 'delete'; message_id: number; deleted_at: string }
   | { kind: 'react'; message_id: number; emoji: string; user_id: number; added: boolean }
+  | { kind: 'pin'; message_id: number; is_pinned: boolean }
 
 const enc = new TextEncoder()
 const dec = new TextDecoder()
@@ -46,6 +57,7 @@ export function decodeChatPayload(bytes: Uint8Array): ChatPayload | null {
     if (typeof parsed.body !== 'string' || typeof parsed.sender_name !== 'string') return null
     if (typeof parsed.created_at !== 'string' || typeof parsed.uid !== 'string') return null
     if (parsed.recipient_id !== undefined && typeof parsed.recipient_id !== 'number') return null
+    if (parsed.attachment_url !== undefined && typeof parsed.attachment_url !== 'string') return null
     return parsed as ChatPayload
   } catch {
     return null

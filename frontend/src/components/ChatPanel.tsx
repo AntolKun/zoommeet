@@ -40,7 +40,7 @@ export function dispatchOpenDm(userId: number, name: string) {
 
 export function ChatPanel({ open, onClose, isHost }: Props) {
   const { t } = useTranslation()
-  const { messages, send, historyLoaded } = useRoomChat()
+  const { messages, send, historyLoaded, uploadAttachment } = useRoomChat()
   const { locked: copyLocked } = useChatCopyLock()
   const { disabled: chatDisabled } = useChatDisabled()
   const inputDisabled = chatDisabled && !isHost
@@ -52,9 +52,13 @@ export function ChatPanel({ open, onClose, isHost }: Props) {
   const [mentionOpen, setMentionOpen] = useState(false)
   const [mentionQuery, setMentionQuery] = useState('')
   const [activeTab, setActiveTab] = useState<Tab>({ kind: 'all' })
+  // Pending attachment: user picked a file, previewing before send.
+  const [pending, setPending] = useState<{ file: File; preview?: string } | null>(null)
+  const [uploadError, setUploadError] = useState<string | null>(null)
 
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const participants = useParticipants()
 
@@ -161,20 +165,55 @@ export function ChatPanel({ open, onClose, isHost }: Props) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (sending || !text.trim()) return
+    if (sending) return
+    if (!text.trim() && !pending) return
     setSending(true)
+    setUploadError(null)
     try {
-      const opts =
-        activeTab.kind === 'dm'
-          ? { recipientId: activeTab.userId, recipientName: activeTab.name }
-          : undefined
+      let attachment: Awaited<ReturnType<typeof uploadAttachment>> | undefined
+      if (pending) {
+        try {
+          attachment = await uploadAttachment(pending.file)
+        } catch (err) {
+          setUploadError(err instanceof Error ? err.message : t('chat.attachUploadFail'))
+          setSending(false)
+          return
+        }
+      }
+      const opts: Parameters<typeof send>[1] = {}
+      if (activeTab.kind === 'dm') {
+        opts.recipientId = activeTab.userId
+        opts.recipientName = activeTab.name
+      }
+      if (attachment) opts.attachment = attachment
       await send(text, opts)
       setText('')
+      setPending(null)
       setEmojiOpen(false)
       setMentionOpen(false)
     } finally {
       setSending(false)
     }
+  }
+
+  function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]
+    if (fileInputRef.current) fileInputRef.current.value = ''
+    if (!f) return
+    setUploadError(null)
+    if (f.size > 10 * 1024 * 1024) {
+      setUploadError(t('chat.attachTooBig'))
+      return
+    }
+    // Local preview for images so the user sees what they're about to send.
+    const preview = f.type.startsWith('image/') ? URL.createObjectURL(f) : undefined
+    setPending({ file: f, preview })
+  }
+
+  function clearPending() {
+    if (pending?.preview) URL.revokeObjectURL(pending.preview)
+    setPending(null)
+    setUploadError(null)
   }
 
   function insertEmoji(emoji: string) {
@@ -330,10 +369,61 @@ export function ChatPanel({ open, onClose, isHost }: Props) {
           </div>
         )}
 
+        {(pending || uploadError) && (
+          <div className="border-t border-[var(--color-line)] px-3 py-2 shrink-0">
+            {pending && (
+              <div className="flex items-center gap-2 rounded-md border border-[var(--color-line)] bg-[var(--color-surface-2)] p-2">
+                {pending.preview ? (
+                  <img
+                    src={pending.preview}
+                    alt=""
+                    className="w-10 h-10 rounded object-cover"
+                  />
+                ) : (
+                  <span className="w-10 h-10 rounded bg-[var(--color-surface)] flex items-center justify-center text-lg" aria-hidden>📎</span>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-[var(--color-ink)] truncate">{pending.file.name}</p>
+                  <p className="text-[10px] font-mono text-[var(--color-ink-faint)]">
+                    {formatBytes(pending.file.size)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={clearPending}
+                  aria-label={t('chat.attachRemove')}
+                  className="text-[var(--color-ink-muted)] hover:text-[var(--color-bad)] px-1"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+            {uploadError && (
+              <p className="text-[10px] text-[var(--color-bad)] mt-1">{uploadError}</p>
+            )}
+          </div>
+        )}
         <form
           onSubmit={handleSubmit}
           className="border-t border-[var(--color-line)] p-3 flex items-end gap-2 shrink-0"
         >
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            accept="image/*,application/pdf,.txt,.csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
+            onChange={onPickFile}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={sending || inputDisabled}
+            title={t('chat.attachTitle')}
+            aria-label={t('chat.attachTitle')}
+            className="h-9 w-9 shrink-0 rounded-md border border-[var(--color-line)] flex items-center justify-center text-base text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] hover:bg-[var(--color-surface-2)] disabled:opacity-50"
+          >
+            📎
+          </button>
           <button
             type="button"
             onClick={() => setEmojiOpen((v) => !v)}
@@ -365,7 +455,7 @@ export function ChatPanel({ open, onClose, isHost }: Props) {
           />
           <button
             type="submit"
-            disabled={sending || inputDisabled || !text.trim()}
+            disabled={sending || inputDisabled || (!text.trim() && !pending)}
             className="h-9 px-3 rounded-md bg-[var(--color-flame)] text-[var(--color-canvas)] text-xs font-medium hover:bg-[var(--color-flame-soft)] disabled:opacity-50"
           >
             {t('chat.send')}
@@ -523,7 +613,16 @@ function MessageRow({ msg }: { msg: ChatMessage }) {
                   : `${isDM ? 'border-[var(--color-flame)] bg-[color-mix(in_oklab,var(--color-flame)_8%,transparent)]' : 'border-[var(--color-line)] bg-[var(--color-surface-2)]'} text-[var(--color-ink)] border`
               }`}
             >
-              <MessageBody text={msg.body} />
+              {msg.body && <MessageBody text={msg.body} />}
+              {msg.attachment_url && (
+                <AttachmentBlock
+                  url={msg.attachment_url}
+                  name={msg.attachment_name}
+                  type={msg.attachment_type}
+                  size={msg.attachment_size}
+                  isMine={msg.isMine}
+                />
+              )}
             </div>
           )}
 
@@ -652,6 +751,72 @@ function MessageBody({ text }: { text: string }) {
       )}
     </>
   )
+}
+
+function AttachmentBlock({
+  url,
+  name,
+  type,
+  size,
+  isMine,
+}: {
+  url: string
+  name?: string
+  type?: string
+  size?: number
+  isMine: boolean
+}) {
+  const isImage = type?.startsWith('image/')
+  if (isImage) {
+    return (
+      <a href={url} target="_blank" rel="noreferrer" className="block mt-1">
+        <img
+          src={url}
+          alt={name ?? ''}
+          loading="lazy"
+          className="max-w-full max-h-64 rounded object-contain border border-[var(--color-line)]"
+        />
+      </a>
+    )
+  }
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      download={name}
+      className={`mt-1 flex items-center gap-2 rounded-md px-2 py-1.5 no-underline border ${
+        isMine
+          ? 'border-[var(--color-canvas)]/30 text-[var(--color-canvas)] hover:bg-[var(--color-canvas)]/10'
+          : 'border-[var(--color-line)] text-[var(--color-ink)] hover:bg-[var(--color-surface)]'
+      }`}
+    >
+      <span aria-hidden className="text-lg leading-none">{fileIcon(type)}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-xs font-medium truncate">{name ?? 'file'}</span>
+        {size !== undefined && (
+          <span className={`block text-[10px] font-mono ${isMine ? 'text-[var(--color-canvas)]/70' : 'text-[var(--color-ink-faint)]'}`}>
+            {formatBytes(size)}
+          </span>
+        )}
+      </span>
+    </a>
+  )
+}
+
+function fileIcon(type?: string): string {
+  if (!type) return '📎'
+  if (type === 'application/pdf') return '📄'
+  if (type.includes('spreadsheet') || type.includes('excel') || type === 'text/csv') return '📊'
+  if (type.includes('presentation') || type.includes('powerpoint')) return '📽'
+  if (type.includes('word') || type === 'text/plain') return '📝'
+  return '📎'
+}
+
+function formatBytes(b: number): string {
+  if (b < 1024) return `${b} B`
+  if (b < 1024 * 1024) return `${Math.round(b / 1024)} KB`
+  return `${(b / (1024 * 1024)).toFixed(1)} MB`
 }
 
 function formatTime(iso: string, lang: string): string {

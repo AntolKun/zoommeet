@@ -23,19 +23,33 @@ func NewMessageRepo(db *sql.DB) *MessageRepo {
 // Selects message + sender display_name + recipient display_name (nullable).
 // LEFT JOIN on recipient since DMs have a value, public messages don't.
 const messageSelectQuery = `
-	SELECT m.id, m.room_id, m.sender_id, m.recipient_id, m.body, m.edited_at, m.deleted_at, m.created_at,
+	SELECT m.id, m.room_id, m.sender_id, m.recipient_id, m.body,
+	       m.attachment_url, m.attachment_name, m.attachment_type, m.attachment_size,
+	       m.reply_to_message_id, m.is_pinned,
+	       m.edited_at, m.deleted_at, m.created_at,
 	       us.display_name AS sender_name,
-	       COALESCE(ur.display_name, '') AS recipient_name
+	       COALESCE(ur.display_name, '') AS recipient_name,
+	       COALESCE(rm.body, '') AS reply_to_body,
+	       COALESCE(rus.display_name, '') AS reply_to_sender
 	FROM messages m
 	JOIN users us ON us.id = m.sender_id
-	LEFT JOIN users ur ON ur.id = m.recipient_id`
+	LEFT JOIN users ur ON ur.id = m.recipient_id
+	LEFT JOIN messages rm ON rm.id = m.reply_to_message_id
+	LEFT JOIN users rus ON rus.id = rm.sender_id`
 
 func scanMessage(row interface{ Scan(...any) error }, m *models.Message) error {
 	var recipientID sql.NullInt64
+	var attURL, attName, attType sql.NullString
+	var attSize sql.NullInt64
+	var replyToID sql.NullInt64
+	var replyToBody, replyToSender string
 	if err := row.Scan(
 		&m.ID, &m.RoomID, &m.SenderID, &recipientID, &m.Body,
+		&attURL, &attName, &attType, &attSize,
+		&replyToID, &m.IsPinned,
 		&m.EditedAt, &m.DeletedAt, &m.CreatedAt,
 		&m.SenderName, &m.RecipientName,
+		&replyToBody, &replyToSender,
 	); err != nil {
 		return err
 	}
@@ -43,17 +57,63 @@ func scanMessage(row interface{ Scan(...any) error }, m *models.Message) error {
 		u := uint64(recipientID.Int64)
 		m.RecipientID = &u
 	}
+	if attURL.Valid {
+		s := attURL.String
+		m.AttachmentURL = &s
+	}
+	if attName.Valid {
+		s := attName.String
+		m.AttachmentName = &s
+	}
+	if attType.Valid {
+		s := attType.String
+		m.AttachmentType = &s
+	}
+	if attSize.Valid {
+		s := uint64(attSize.Int64)
+		m.AttachmentSize = &s
+	}
+	if replyToID.Valid {
+		u := uint64(replyToID.Int64)
+		m.ReplyToMessageID = &u
+		if replyToBody != "" {
+			m.ReplyToBody = &replyToBody
+		}
+		if replyToSender != "" {
+			m.ReplyToSender = &replyToSender
+		}
+	}
 	return nil
 }
 
-func (r *MessageRepo) Create(roomID, senderID uint64, recipientID *uint64, body string) (*models.Message, error) {
-	var rid any
-	if recipientID != nil {
-		rid = *recipientID
+// CreateInput bundles all fields when creating a message so the signature
+// doesn't balloon with each new attribute.
+type CreateMessageInput struct {
+	RoomID           uint64
+	SenderID         uint64
+	RecipientID      *uint64
+	Body             string
+	AttachmentURL    *string
+	AttachmentName   *string
+	AttachmentType   *string
+	AttachmentSize   *uint64
+	ReplyToMessageID *uint64
+}
+
+func (r *MessageRepo) Create(in CreateMessageInput) (*models.Message, error) {
+	var rid, reply any
+	if in.RecipientID != nil {
+		rid = *in.RecipientID
+	}
+	if in.ReplyToMessageID != nil {
+		reply = *in.ReplyToMessageID
 	}
 	res, err := r.db.Exec(
-		`INSERT INTO messages (room_id, sender_id, recipient_id, body) VALUES (?, ?, ?, ?)`,
-		roomID, senderID, rid, body,
+		`INSERT INTO messages
+		 (room_id, sender_id, recipient_id, body, attachment_url, attachment_name, attachment_type, attachment_size, reply_to_message_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		in.RoomID, in.SenderID, rid, in.Body,
+		in.AttachmentURL, in.AttachmentName, in.AttachmentType, in.AttachmentSize, reply,
 	)
 	if err != nil {
 		return nil, err
@@ -63,6 +123,46 @@ func (r *MessageRepo) Create(roomID, senderID uint64, recipientID *uint64, body 
 		return nil, err
 	}
 	return r.GetByID(uint64(id))
+}
+
+// SetPinned toggles the pinned flag. Access control is the caller's job — this
+// method assumes the caller has already verified host-only permission.
+func (r *MessageRepo) SetPinned(messageID uint64, pinned bool) error {
+	res, err := r.db.Exec(
+		`UPDATE messages SET is_pinned = ? WHERE id = ? AND deleted_at IS NULL`,
+		pinned, messageID,
+	)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrMessageNotFound
+	}
+	return nil
+}
+
+// ListPinned returns only pinned messages for a room, newest-first. Used by the
+// chat panel to render a sticky "pinned messages" section.
+func (r *MessageRepo) ListPinned(roomID uint64) ([]*models.Message, error) {
+	rows, err := r.db.Query(
+		messageSelectQuery+` WHERE m.room_id = ? AND m.is_pinned = 1 AND m.deleted_at IS NULL ORDER BY m.id DESC`,
+		roomID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []*models.Message{}
+	for rows.Next() {
+		m := &models.Message{}
+		if err := scanMessage(rows, m); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
 }
 
 func (r *MessageRepo) GetByID(id uint64) (*models.Message, error) {
