@@ -146,7 +146,9 @@ func AdmitWaiting(cfg *config.Config, rooms *repo.RoomRepo, cohosts *repo.Cohost
 			identity = "guest_" + shortuuid.New()[:8]
 		}
 
-		token, err := buildLiveKitToken(cfg, room.Slug, identity, wr.DisplayName)
+		// Admitted from waiting room → always audience in webinar mode.
+		canPublish := !room.IsWebinar
+		token, err := buildLiveKitToken(cfg, room.Slug, identity, wr.DisplayName, canPublish)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
 			return

@@ -136,6 +136,7 @@
     "badgeLocked": "已锁定",
     "badgePassword": "🔒 密码",
     "badgeWaitingRoom": "⏳ 等候室",
+    "badgeWebinar": "📺 研讨会",
     "scheduleUpcoming": "即将开始",
     "scheduleLive": "正在进行",
     "schedulePast": "已结束",
@@ -181,6 +182,10 @@
     "defaultCamOffOnSubtitle": "新加入者进入预加入界面时摄像头为关闭状态。点击加入前可重新开启。",
     "defaultCamOffOffTitle": "入会时摄像头开启",
     "defaultCamOffOffSubtitle": "摄像头默认开启（加入者仍可自行选择）",
+    "webinarOnTitle": "网络研讨会模式",
+    "webinarOnSubtitle": "只有主持人 + 联合主持人可以发言/开摄像头。观众只能观看 + 聊天 + 反应。",
+    "webinarOffTitle": "普通会议",
+    "webinarOffSubtitle": "所有参与者都可发言和共享视频。",
     "create": "创建",
     "creating": "创建中...",
     "errSlugTaken": "该标识符已被占用。请换一个。",
@@ -524,7 +529,36 @@
     "attachTitle": "附加文件",
     "attachRemove": "取消附件",
     "attachTooBig": "文件过大（最大 10 MB）",
-    "attachUploadFail": "文件上传失败"
+    "attachUploadFail": "文件上传失败",
+    "replyTitle": "回复此消息",
+    "replyingTo": "回复 {{name}}",
+    "replyCancel": "取消回复",
+    "replyDeleted": "消息已删除",
+    "pinTitle": "置顶消息",
+    "unpinTitle": "取消置顶",
+    "pinnedCount_one": "{{count}} 条置顶消息",
+    "pinnedCount_other": "{{count}} 条置顶消息",
+    "typingSingle": "{{name}} 正在输入...",
+    "typingPair": "{{a}} 和 {{b}} 正在输入...",
+    "typingMany": "{{count}} 人正在输入...",
+    "readSent": "已发送",
+    "readSeen": "已读"
+  },
+  "gif": {
+    "title": "发送 GIF",
+    "searchPlaceholder": "搜索 GIF...",
+    "loading": "加载 GIF 中...",
+    "empty": "没有匹配的 GIF。",
+    "loadError": "GIF 加载失败",
+    "poweredBy": "由 Giphy 提供"
+  },
+  "soundboard": {
+    "title": "音效板 — 为所有人播放音效",
+    "short": "音效板",
+    "hint": "点击播放（所有人都能听到）"
+  },
+  "webinar": {
+    "audienceLabel": "观众模式 — 只能观看、聊天、反应"
   },
   "participants": {
     "title": "参与者",

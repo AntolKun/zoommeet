@@ -28,6 +28,7 @@ import { WatermarkOverlay } from '@/components/WatermarkOverlay'
 import { LaserPointerProvider } from '@/hooks/useLaserPointer'
 import { LaserPointerOverlay } from '@/components/LaserPointerOverlay'
 import { LocalPinHighlighter } from '@/components/LocalPinHighlighter'
+import { WebinarBanner } from '@/components/WebinarBanner'
 import { LocalPinProvider } from '@/hooks/useLocalPin'
 import { BackgroundEffectProvider } from '@/hooks/useBackgroundEffect'
 import { NoiseSuppressionProvider } from '@/hooks/useNoiseSuppression'
@@ -85,6 +86,8 @@ export function Room() {
   const { t } = useTranslation()
   const { room: roomInfo, isOwner, isHost } = useRoomInfo(slug)
   const waitingRoomEnabled = roomInfo?.waiting_room_enabled ?? false
+  // Audience = webinar mode is on AND the caller isn't a host.
+  const isAudience = (roomInfo?.is_webinar ?? false) && !isHost
 
   const [phase, setPhase] = useState<Phase>('prejoin')
   const [disconnectReason, setDisconnectReason] = useState<DisconnectReason | undefined>()
@@ -108,7 +111,12 @@ export function Room() {
     appliedRoomDefaultsRef.current = true
     if (roomInfo.default_mic_off) setMic(false)
     if (roomInfo.default_cam_off) setCam(false)
-  }, [roomInfo, phase])
+    // Audience never publishes — force both off regardless of room defaults.
+    if (isAudience) {
+      setMic(false)
+      setCam(false)
+    }
+  }, [roomInfo, phase, isAudience])
 
   // LiveKit creds — either from immediate token response or via waiting-room admit.
   const [liveKitCreds, setLiveKitCreds] = useState<LiveKitCreds | null>(null)
@@ -353,6 +361,7 @@ export function Room() {
         <MicLockEnforcer isHost={isHost} />
         <SpotlightBanner />
         <LocalPinHighlighter />
+        {roomInfo?.is_webinar && <WebinarBanner isHost={isHost} />}
         <WatermarkOverlay />
         <LaserPointerOverlay />
         <AnnotationCanvas />

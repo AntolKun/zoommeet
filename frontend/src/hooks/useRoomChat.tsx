@@ -21,6 +21,15 @@ import {
   newUid,
   type ChatPayload,
 } from '@/lib/chatProtocol'
+import {
+  DM_READ_TOPIC,
+  TYPING_TOPIC,
+  decodeDMRead,
+  decodeTyping,
+  encodeDMRead,
+  encodeTyping,
+  type TypingPayload,
+} from '@/lib/chatPresence'
 
 export type ChatMessage = ChatPayload & {
   /** True if this message was sent by the current user. */
@@ -85,6 +94,14 @@ type ChatContextValue = {
   uploadAttachment: (file: File) => Promise<ChatAttachment>
   /** Host-only. Flips the message's pinned state; server enforces auth. */
   togglePin: (messageId: number, currentlyPinned: boolean) => Promise<void>
+  /** Currently active typers (excludes self). Key = participant identity. */
+  typers: Record<string, TypingPayload>
+  /** Debounced broadcast: call on every keystroke. Auto-clears after 3s idle. */
+  emitTyping: (activeTab: { kind: 'all' } | { kind: 'dm'; userId: number }) => void
+  /** Mark all DM messages from `partnerId` up to `upToMessageId` as read + broadcast. */
+  markDMRead: (partnerId: number, upToMessageId: number) => void
+  /** Highest message id from me that has been read by that DM partner. */
+  dmReadUpTo: Record<number, number>
   latest: ChatMessage | null
   historyLoaded: boolean
 }
@@ -123,6 +140,14 @@ export function RoomChatProvider({
   const [historyLoaded, setHistoryLoaded] = useState(false)
   const seenIds = useRef(new Set<number>())
   const seenUids = useRef(new Set<string>())
+  const [typers, setTypers] = useState<Record<string, TypingPayload>>({})
+  const [dmReadUpTo, setDmReadUpTo] = useState<Record<number, number>>({})
+  // Auto-clear typer state 3s after last event so a client that drops off
+  // stays "typing" no longer than one message worth of stale.
+  const typerTimers = useRef<Record<string, number>>({})
+  // Local debounce state for our own outbound typing event.
+  const lastTypingSent = useRef<number>(0)
+  const stopTypingTimer = useRef<number | null>(null)
 
   const addMessage = useCallback((m: ChatPayload, isMine: boolean) => {
     if (m.id !== undefined && seenIds.current.has(m.id)) return
@@ -253,12 +278,51 @@ export function RoomChatProvider({
         else if (upd.kind === 'pin') applyPin(upd.message_id, upd.is_pinned)
         return
       }
+      if (topic === TYPING_TOPIC) {
+        const t = decodeTyping(payload)
+        if (!t || t.identity === localParticipant?.identity) return
+        setTypers((prev) => {
+          if (!t.active) {
+            const { [t.identity]: _, ...rest } = prev
+            void _
+            return rest
+          }
+          return { ...prev, [t.identity]: t }
+        })
+        // Refresh the 3s auto-clear timer for this identity.
+        const existing = typerTimers.current[t.identity]
+        if (existing) window.clearTimeout(existing)
+        if (t.active) {
+          typerTimers.current[t.identity] = window.setTimeout(() => {
+            setTypers((prev) => {
+              const { [t.identity]: _, ...rest } = prev
+              void _
+              return rest
+            })
+          }, 3500)
+        }
+        return
+      }
+      if (topic === DM_READ_TOPIC) {
+        const r = decodeDMRead(payload)
+        if (!r || myId === null) return
+        // The broadcaster read messages FROM `partner_id`, up to `up_to_message_id`.
+        // If I'm that partner, this means my messages up to that id are seen.
+        if (r.partner_id === myId) {
+          setDmReadUpTo((prev) => {
+            const cur = prev[r.reader_id] ?? 0
+            if (r.up_to_message_id <= cur) return prev
+            return { ...prev, [r.reader_id]: r.up_to_message_id }
+          })
+        }
+        return
+      }
     }
     room.on(RoomEvent.DataReceived, onData)
     return () => {
       room.off(RoomEvent.DataReceived, onData)
     }
-  }, [room, addMessage, applyEdit, applyDelete, applyReaction, applyPin])
+  }, [room, addMessage, applyEdit, applyDelete, applyReaction, applyPin, localParticipant?.identity, myId])
 
   const send = useCallback(
     async (rawText: string, opts?: SendOptions) => {
@@ -431,6 +495,74 @@ export function RoomChatProvider({
     [messages],
   )
 
+  const emitTyping = useCallback(
+    (activeTab: { kind: 'all' } | { kind: 'dm'; userId: number }) => {
+      if (!localParticipant) return
+      const now = Date.now()
+      const senderName =
+        localParticipant.name?.trim() || localParticipant.identity || 'Tamu'
+      // Debounce: only broadcast "active=true" at most every 2s.
+      if (now - lastTypingSent.current > 2000) {
+        lastTypingSent.current = now
+        const payload: TypingPayload = {
+          identity: localParticipant.identity,
+          name: senderName,
+          active: true,
+          recipient_id: activeTab.kind === 'dm' ? activeTab.userId : undefined,
+        }
+        const publishOpts: Parameters<typeof localParticipant.publishData>[1] = {
+          reliable: false,
+          topic: TYPING_TOPIC,
+        }
+        if (activeTab.kind === 'dm') {
+          publishOpts.destinationIdentities = [String(activeTab.userId)]
+        }
+        void localParticipant.publishData(encodeTyping(payload), publishOpts).catch(() => {})
+      }
+      // Always reset the "stop-typing" broadcast timer.
+      if (stopTypingTimer.current) window.clearTimeout(stopTypingTimer.current)
+      stopTypingTimer.current = window.setTimeout(() => {
+        lastTypingSent.current = 0
+        const payload: TypingPayload = {
+          identity: localParticipant.identity,
+          name: senderName,
+          active: false,
+          recipient_id: activeTab.kind === 'dm' ? activeTab.userId : undefined,
+        }
+        const publishOpts: Parameters<typeof localParticipant.publishData>[1] = {
+          reliable: false,
+          topic: TYPING_TOPIC,
+        }
+        if (activeTab.kind === 'dm') {
+          publishOpts.destinationIdentities = [String(activeTab.userId)]
+        }
+        void localParticipant.publishData(encodeTyping(payload), publishOpts).catch(() => {})
+      }, 3000)
+    },
+    [localParticipant],
+  )
+
+  const markDMRead = useCallback(
+    (partnerId: number, upToMessageId: number) => {
+      if (!localParticipant || myId === null) return
+      const readerName =
+        localParticipant.name?.trim() || localParticipant.identity || 'Tamu'
+      const payload = {
+        reader_id: myId,
+        reader_name: readerName,
+        partner_id: partnerId,
+        up_to_message_id: upToMessageId,
+      }
+      const publishOpts: Parameters<typeof localParticipant.publishData>[1] = {
+        reliable: true,
+        topic: DM_READ_TOPIC,
+        destinationIdentities: [String(partnerId)],
+      }
+      void localParticipant.publishData(encodeDMRead(payload), publishOpts).catch(() => {})
+    },
+    [localParticipant, myId],
+  )
+
   const togglePin = useCallback(
     async (messageId: number, currentlyPinned: boolean) => {
       if (!localParticipant) return
@@ -473,8 +605,36 @@ export function RoomChatProvider({
   )
 
   const value = useMemo(
-    () => ({ messages, send, editMessage, deleteMessage, toggleReaction, uploadAttachment, latest, historyLoaded }),
-    [messages, send, editMessage, deleteMessage, toggleReaction, uploadAttachment, latest, historyLoaded],
+    () => ({
+      messages,
+      send,
+      editMessage,
+      deleteMessage,
+      toggleReaction,
+      uploadAttachment,
+      togglePin,
+      typers,
+      emitTyping,
+      markDMRead,
+      dmReadUpTo,
+      latest,
+      historyLoaded,
+    }),
+    [
+      messages,
+      send,
+      editMessage,
+      deleteMessage,
+      toggleReaction,
+      uploadAttachment,
+      togglePin,
+      typers,
+      emitTyping,
+      markDMRead,
+      dmReadUpTo,
+      latest,
+      historyLoaded,
+    ],
   )
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>

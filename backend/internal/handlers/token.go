@@ -50,13 +50,15 @@ func generateRequestToken() (string, error) {
 
 // buildLiveKitToken bikin JWT LiveKit dengan grant standar (join + publish + subscribe).
 // Dipakai bareng oleh Token, GuestToken, dan AdmitWaiting.
-func buildLiveKitToken(cfg *config.Config, roomSlug, identity, displayName string) (string, error) {
+// canPublish=false untuk audience webinar (mereka subscribe + data channel doang).
+func buildLiveKitToken(cfg *config.Config, roomSlug, identity, displayName string, canPublish bool) (string, error) {
 	at := auth.NewAccessToken(cfg.LiveKitAPIKey, cfg.LiveKitAPISecret)
 	grant := &auth.VideoGrant{
-		RoomJoin:     true,
-		Room:         roomSlug,
-		CanPublish:   boolPtr(true),
-		CanSubscribe: boolPtr(true),
+		RoomJoin:       true,
+		Room:           roomSlug,
+		CanPublish:     boolPtr(canPublish),
+		CanSubscribe:   boolPtr(true),
+		CanPublishData: boolPtr(true),
 	}
 	at.SetVideoGrant(grant).
 		SetIdentity(identity).
@@ -119,7 +121,7 @@ type tokenResponse struct {
 // @Failure      403      {object}  errorResponse  "private dan bukan owner, locked dan bukan owner, atau password salah"
 // @Failure      404      {object}  errorResponse  "room gak ada"
 // @Router       /token [post]
-func Token(cfg *config.Config, users *repo.UserRepo, rooms *repo.RoomRepo, waiting *repo.WaitingRepo) gin.HandlerFunc {
+func Token(cfg *config.Config, users *repo.UserRepo, rooms *repo.RoomRepo, waiting *repo.WaitingRepo, cohosts *repo.CohostRepo) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID, ok := middleware.UserIDFromCtx(c)
 		if !ok {
@@ -191,7 +193,15 @@ func Token(cfg *config.Config, users *repo.UserRepo, rooms *repo.RoomRepo, waiti
 		}
 
 		identity := strconv.FormatUint(user.ID, 10)
-		token, err := buildLiveKitToken(cfg, room.Slug, identity, user.DisplayName)
+		// Webinar mode: audience (non-owner, non-cohost) gets subscribe-only.
+		canPublish := true
+		if room.IsWebinar && !isOwner {
+			isCohost, _ := cohosts.IsCohost(room.ID, user.ID)
+			if !isCohost {
+				canPublish = false
+			}
+		}
+		token, err := buildLiveKitToken(cfg, room.Slug, identity, user.DisplayName, canPublish)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
 			return
@@ -290,7 +300,9 @@ func GuestToken(cfg *config.Config, rooms *repo.RoomRepo, waiting *repo.WaitingR
 		// Random per-join identity so guests don't collide with each other or
 		// with an owner who joined as themselves.
 		identity := "guest_" + shortuuid.New()[:8]
-		token, err := buildLiveKitToken(cfg, room.Slug, identity, name)
+		// Guests never publish in webinar mode — they're always audience.
+		canPublish := !room.IsWebinar
+		token, err := buildLiveKitToken(cfg, room.Slug, identity, name, canPublish)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
 			return

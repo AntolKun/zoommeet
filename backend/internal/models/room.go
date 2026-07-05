@@ -19,7 +19,10 @@ type Room struct {
 	// Owner-configurable, peserta tetep bisa override sebelum klik Join.
 	DefaultMicOff bool      `json:"default_mic_off"`
 	DefaultCamOff bool      `json:"default_cam_off"`
-	CreatedAt     time.Time `json:"created_at"`
+	// Webinar mode: only host + cohosts can publish audio/video. Everyone else
+	// joins as subscribe-only (they can still use chat, reactions, Q&A).
+	IsWebinar bool      `json:"is_webinar"`
+	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 
 	// Never sent over the wire — populated when the row is loaded so handlers

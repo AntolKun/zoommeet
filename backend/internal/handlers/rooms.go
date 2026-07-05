@@ -43,6 +43,8 @@ type createRoomRequest struct {
 	// di pre-join dengan mic/cam off — bisa override sebelum klik Join.
 	DefaultMicOff bool `json:"default_mic_off"`
 	DefaultCamOff bool `json:"default_cam_off"`
+	// Webinar mode: only host + cohosts publish audio/video; audience watch-only.
+	IsWebinar bool `json:"is_webinar"`
 }
 
 var validRecurrences = map[string]bool{
@@ -145,6 +147,7 @@ func CreateRoom(rooms *repo.RoomRepo) gin.HandlerFunc {
 			WaitingRoomEnabled: req.WaitingRoomEnabled,
 			DefaultMicOff:      req.DefaultMicOff,
 			DefaultCamOff:      req.DefaultCamOff,
+			IsWebinar:          req.IsWebinar,
 		})
 		if err != nil {
 			var mysqlErr *mysql.MySQLError

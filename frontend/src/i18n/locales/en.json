@@ -136,6 +136,7 @@
     "badgeLocked": "locked",
     "badgePassword": "🔒 password",
     "badgeWaitingRoom": "⏳ waiting room",
+    "badgeWebinar": "📺 webinar",
     "scheduleUpcoming": "upcoming",
     "scheduleLive": "live now",
     "schedulePast": "ended",
@@ -181,6 +182,10 @@
     "defaultCamOffOnSubtitle": "New joiners land in pre-join with camera off. They can still turn it on before clicking Join.",
     "defaultCamOffOffTitle": "Camera on on join",
     "defaultCamOffOffSubtitle": "Camera is on by default (joiners can still choose)",
+    "webinarOnTitle": "Webinar mode",
+    "webinarOnSubtitle": "Only host + cohosts can publish audio/video. Audience is watch-only + chat + reactions.",
+    "webinarOffTitle": "Regular meeting",
+    "webinarOffSubtitle": "Everyone can speak and share video.",
     "create": "Create",
     "creating": "Creating...",
     "errSlugTaken": "That slug is taken. Try another.",
@@ -524,7 +529,36 @@
     "attachTitle": "Attach file",
     "attachRemove": "Cancel attachment",
     "attachTooBig": "File too large (max 10 MB)",
-    "attachUploadFail": "File upload failed"
+    "attachUploadFail": "File upload failed",
+    "replyTitle": "Reply to this message",
+    "replyingTo": "Replying to {{name}}",
+    "replyCancel": "Cancel reply",
+    "replyDeleted": "message deleted",
+    "pinTitle": "Pin message",
+    "unpinTitle": "Unpin",
+    "pinnedCount_one": "{{count}} pinned message",
+    "pinnedCount_other": "{{count}} pinned messages",
+    "typingSingle": "{{name}} is typing...",
+    "typingPair": "{{a}} and {{b}} are typing...",
+    "typingMany": "{{count}} people are typing...",
+    "readSent": "Sent",
+    "readSeen": "Seen"
+  },
+  "gif": {
+    "title": "Send a GIF",
+    "searchPlaceholder": "Search GIFs...",
+    "loading": "loading GIFs...",
+    "empty": "No matching GIFs.",
+    "loadError": "Failed to load GIFs",
+    "poweredBy": "Powered by Giphy"
+  },
+  "soundboard": {
+    "title": "Soundboard — play sound effects for everyone",
+    "short": "Soundboard",
+    "hint": "Click to play (everyone hears it)"
+  },
+  "webinar": {
+    "audienceLabel": "Audience mode — watch, chat, and react only"
   },
   "participants": {
     "title": "Participants",

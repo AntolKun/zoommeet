@@ -5,6 +5,7 @@ import { useRoomChat, type ChatMessage } from '@/hooks/useRoomChat'
 import { useChatCopyLock } from '@/hooks/useChatCopyLock'
 import { useChatDisabled } from '@/hooks/useRoomFlags'
 import { getCurrentUserId } from '@/lib/api'
+import { GifPicker } from '@/components/GifPicker'
 
 type Props = {
   open: boolean
@@ -40,7 +41,16 @@ export function dispatchOpenDm(userId: number, name: string) {
 
 export function ChatPanel({ open, onClose, isHost }: Props) {
   const { t } = useTranslation()
-  const { messages, send, historyLoaded, uploadAttachment } = useRoomChat()
+  const {
+    messages,
+    send,
+    historyLoaded,
+    uploadAttachment,
+    typers,
+    emitTyping,
+    markDMRead,
+    dmReadUpTo,
+  } = useRoomChat()
   const { locked: copyLocked } = useChatCopyLock()
   const { disabled: chatDisabled } = useChatDisabled()
   const inputDisabled = chatDisabled && !isHost
@@ -55,6 +65,9 @@ export function ChatPanel({ open, onClose, isHost }: Props) {
   // Pending attachment: user picked a file, previewing before send.
   const [pending, setPending] = useState<{ file: File; preview?: string } | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  // Reply-to state: user clicked "reply" on a message, composer shows quote.
+  const [replyTo, setReplyTo] = useState<{ id: number; body: string; sender: string } | null>(null)
+  const [gifOpen, setGifOpen] = useState(false)
 
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -112,6 +125,20 @@ export function ChatPanel({ open, onClose, isHost }: Props) {
     el.scrollTop = el.scrollHeight
   }, [visibleMessages.length, open])
 
+  // Mark DM read: when panel is open + active tab is a DM, whenever new DM
+  // messages arrive from that partner, broadcast a read receipt. We just find
+  // the highest id in the currently visible DM messages from the partner.
+  useEffect(() => {
+    if (!open || activeTab.kind !== 'dm') return
+    const partnerId = activeTab.userId
+    let highest = 0
+    for (const m of visibleMessages) {
+      if (m.id === undefined) continue
+      if (m.sender_id === partnerId && m.id > highest) highest = m.id
+    }
+    if (highest > 0) markDMRead(partnerId, highest)
+  }, [visibleMessages, open, activeTab, markDMRead])
+
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
@@ -136,6 +163,10 @@ export function ChatPanel({ open, onClose, isHost }: Props) {
       setMentionQuery(m[1])
     } else {
       setMentionOpen(false)
+    }
+    // Broadcast typing indicator (rate-limited inside emitTyping).
+    if (value.length > 0) {
+      emitTyping(activeTab.kind === 'dm' ? { kind: 'dm', userId: activeTab.userId } : { kind: 'all' })
     }
   }
 
@@ -186,9 +217,11 @@ export function ChatPanel({ open, onClose, isHost }: Props) {
         opts.recipientName = activeTab.name
       }
       if (attachment) opts.attachment = attachment
+      if (replyTo) opts.replyTo = replyTo
       await send(text, opts)
       setText('')
       setPending(null)
+      setReplyTo(null)
       setEmojiOpen(false)
       setMentionOpen(false)
     } finally {
@@ -214,6 +247,29 @@ export function ChatPanel({ open, onClose, isHost }: Props) {
     if (pending?.preview) URL.revokeObjectURL(pending.preview)
     setPending(null)
     setUploadError(null)
+  }
+
+  async function sendGif(gif: { url: string; title: string; size: number }) {
+    setGifOpen(false)
+    const opts: Parameters<typeof send>[1] = {
+      attachment: {
+        url: gif.url,
+        name: gif.title || 'GIF',
+        type: 'image/gif',
+        size: gif.size,
+      },
+    }
+    if (activeTab.kind === 'dm') {
+      opts.recipientId = activeTab.userId
+      opts.recipientName = activeTab.name
+    }
+    if (replyTo) opts.replyTo = replyTo
+    try {
+      await send('', opts)
+      setReplyTo(null)
+    } catch {
+      // ignore — send() already handles fallback
+    }
   }
 
   function insertEmoji(emoji: string) {
@@ -313,6 +369,14 @@ export function ChatPanel({ open, onClose, isHost }: Props) {
           </div>
         )}
 
+        <PinnedBanner
+          messages={messages}
+          onJump={(msgUid) => {
+            const el = document.querySelector(`[data-msg-uid="${msgUid}"]`)
+            el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          }}
+        />
+
         <div
           ref={listRef}
           className={`flex-1 overflow-y-auto px-4 py-3 space-y-3 ${copyLocked ? 'select-none' : ''}`}
@@ -330,9 +394,30 @@ export function ChatPanel({ open, onClose, isHost }: Props) {
             </p>
           )}
           {visibleMessages.map((m) => (
-            <MessageRow key={m.uid} msg={m} />
+            <MessageRow
+              key={m.uid}
+              msg={m}
+              isHost={isHost}
+              dmReadUpTo={dmReadUpTo}
+              onReply={() => {
+                if (m.id === undefined) return
+                setReplyTo({
+                  id: m.id,
+                  body: m.body || (m.attachment_name ?? ''),
+                  sender: m.sender_name,
+                })
+                inputRef.current?.focus()
+              }}
+            />
           ))}
         </div>
+
+        <TypingIndicator
+          typers={typers}
+          activeTab={activeTab}
+        />
+
+        <GifPicker open={gifOpen} onClose={() => setGifOpen(false)} onPick={sendGif} />
 
         {emojiOpen && (
           <div className="border-t border-[var(--color-line)] px-3 py-2 grid grid-cols-8 gap-1 max-h-32 overflow-y-auto shrink-0">
@@ -369,6 +454,25 @@ export function ChatPanel({ open, onClose, isHost }: Props) {
           </div>
         )}
 
+        {replyTo && (
+          <div className="border-t border-[var(--color-line)] px-3 py-2 shrink-0 flex items-start gap-2 bg-[var(--color-surface-2)]">
+            <span aria-hidden className="text-[var(--color-flame)] text-lg leading-none">↪</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-mono uppercase tracking-wider text-[var(--color-ink-faint)]">
+                {t('chat.replyingTo', { name: replyTo.sender })}
+              </p>
+              <p className="text-xs text-[var(--color-ink-soft)] truncate">{replyTo.body}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setReplyTo(null)}
+              aria-label={t('chat.replyCancel')}
+              className="text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] px-1"
+            >
+              ×
+            </button>
+          </div>
+        )}
         {(pending || uploadError) && (
           <div className="border-t border-[var(--color-line)] px-3 py-2 shrink-0">
             {pending && (
@@ -436,6 +540,20 @@ export function ChatPanel({ open, onClose, isHost }: Props) {
             }`}
           >
             😀
+          </button>
+          <button
+            type="button"
+            onClick={() => setGifOpen((v) => !v)}
+            aria-pressed={gifOpen}
+            title={t('gif.title')}
+            disabled={sending || inputDisabled}
+            className={`h-9 px-2 shrink-0 rounded-md border flex items-center justify-center text-[10px] font-bold transition-colors ${
+              gifOpen
+                ? 'bg-[var(--color-surface-2)] border-[var(--color-line-strong)] text-[var(--color-ink)]'
+                : 'border-[var(--color-line)] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]'
+            } disabled:opacity-50`}
+          >
+            GIF
           </button>
           <input
             ref={inputRef}
@@ -509,9 +627,19 @@ function TabButton({
   )
 }
 
-function MessageRow({ msg }: { msg: ChatMessage }) {
+function MessageRow({
+  msg,
+  isHost,
+  onReply,
+  dmReadUpTo,
+}: {
+  msg: ChatMessage
+  isHost: boolean
+  onReply: () => void
+  dmReadUpTo: Record<number, number>
+}) {
   const { t, i18n } = useTranslation()
-  const { editMessage, deleteMessage, toggleReaction } = useRoomChat()
+  const { editMessage, deleteMessage, toggleReaction, togglePin } = useRoomChat()
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(msg.body)
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -553,6 +681,7 @@ function MessageRow({ msg }: { msg: ChatMessage }) {
 
   return (
     <div
+      data-msg-uid={msg.uid}
       className={`group flex flex-col ${msg.isMine ? 'items-end' : 'items-start'}`}
     >
       {!msg.isMine && (
@@ -611,8 +740,16 @@ function MessageRow({ msg }: { msg: ChatMessage }) {
                 msg.isMine
                   ? `${isDM ? 'bg-[var(--color-flame-deep)]' : 'bg-[var(--color-flame)]'} text-[var(--color-canvas)]`
                   : `${isDM ? 'border-[var(--color-flame)] bg-[color-mix(in_oklab,var(--color-flame)_8%,transparent)]' : 'border-[var(--color-line)] bg-[var(--color-surface-2)]'} text-[var(--color-ink)] border`
-              }`}
+              } ${msg.is_pinned ? 'ring-2 ring-[var(--color-flame)] ring-offset-1 ring-offset-transparent' : ''}`}
             >
+              {msg.reply_to_message_id !== undefined && (
+                <div className={`mb-1 pl-2 border-l-2 ${msg.isMine ? 'border-[var(--color-canvas)]/40' : 'border-[var(--color-flame)]'} opacity-80`}>
+                  <p className="text-[10px] font-mono uppercase tracking-wider">
+                    {msg.reply_to_sender ?? t('chat.replyDeleted')}
+                  </p>
+                  <p className="text-xs truncate">{msg.reply_to_body ?? t('chat.replyDeleted')}</p>
+                </div>
+              )}
               {msg.body && <MessageBody text={msg.body} />}
               {msg.attachment_url && (
                 <AttachmentBlock
@@ -640,6 +777,28 @@ function MessageRow({ msg }: { msg: ChatMessage }) {
               >
                 😊
               </button>
+              <button
+                type="button"
+                onClick={onReply}
+                title={t('chat.replyTitle')}
+                className="w-6 h-6 rounded-full bg-[var(--color-surface)] border border-[var(--color-line-strong)] flex items-center justify-center text-[10px] hover:bg-[var(--color-surface-2)]"
+              >
+                ↪
+              </button>
+              {isHost && !isDM && (
+                <button
+                  type="button"
+                  onClick={() => msg.id !== undefined && togglePin(msg.id, !!msg.is_pinned)}
+                  title={msg.is_pinned ? t('chat.unpinTitle') : t('chat.pinTitle')}
+                  className={`w-6 h-6 rounded-full border flex items-center justify-center text-[10px] hover:bg-[var(--color-surface-2)] ${
+                    msg.is_pinned
+                      ? 'bg-[color-mix(in_oklab,var(--color-flame)_18%,transparent)] border-[var(--color-flame)]'
+                      : 'bg-[var(--color-surface)] border-[var(--color-line-strong)]'
+                  }`}
+                >
+                  📌
+                </button>
+              )}
               {canEditOrDelete && (
                 <>
                   <button
@@ -708,9 +867,20 @@ function MessageRow({ msg }: { msg: ChatMessage }) {
         </div>
       )}
 
-      <p className="text-[10px] text-[var(--color-ink-faint)] font-mono mt-0.5 px-1">
-        {time}
-        {isEdited && !isDeleted && <span> · {t('chat.edited')}</span>}
+      <p className="text-[10px] text-[var(--color-ink-faint)] font-mono mt-0.5 px-1 flex items-center gap-1">
+        <span>{time}</span>
+        {isEdited && !isDeleted && <span>· {t('chat.edited')}</span>}
+        {msg.isMine && isDM && !isDeleted && msg.id !== undefined && msg.recipient_id !== undefined && (() => {
+          const seen = (dmReadUpTo[msg.recipient_id] ?? 0) >= msg.id
+          return (
+            <span
+              title={seen ? t('chat.readSeen') : t('chat.readSent')}
+              className={seen ? 'text-[var(--color-ok)]' : 'text-[var(--color-ink-faint)]'}
+            >
+              {seen ? '✓✓' : '✓'}
+            </span>
+          )
+        })()}
       </p>
       {error && (
         <p className="text-[10px] text-[var(--color-bad)] font-mono mt-0.5 px-1">{error}</p>
@@ -750,6 +920,90 @@ function MessageBody({ text }: { text: string }) {
         ),
       )}
     </>
+  )
+}
+
+function TypingIndicator({
+  typers,
+  activeTab,
+}: {
+  typers: Record<string, { name: string; recipient_id?: number }>
+  activeTab: Tab
+}) {
+  const { t } = useTranslation()
+  // Filter to typers relevant to this tab:
+  //  - All tab: only typers whose recipient_id is undefined (public)
+  //  - DM tab: only typers whose recipient_id matches me (from that partner)
+  const myId = getCurrentUserId()
+  const relevant = Object.values(typers).filter((t) => {
+    if (activeTab.kind === 'all') return t.recipient_id === undefined
+    return t.recipient_id === myId // DM addressed to me
+  })
+  if (relevant.length === 0) return null
+
+  const label =
+    relevant.length === 1
+      ? t('chat.typingSingle', { name: relevant[0].name })
+      : relevant.length === 2
+      ? t('chat.typingPair', { a: relevant[0].name, b: relevant[1].name })
+      : t('chat.typingMany', { count: relevant.length })
+
+  return (
+    <div className="px-4 py-1 shrink-0 flex items-center gap-2 border-t border-[var(--color-line)]">
+      <span className="flex items-center gap-0.5" aria-hidden>
+        <span className="w-1 h-1 rounded-full bg-[var(--color-ink-muted)] animate-pulse" />
+        <span className="w-1 h-1 rounded-full bg-[var(--color-ink-muted)] animate-pulse" style={{ animationDelay: '0.15s' }} />
+        <span className="w-1 h-1 rounded-full bg-[var(--color-ink-muted)] animate-pulse" style={{ animationDelay: '0.3s' }} />
+      </span>
+      <span className="text-[11px] italic text-[var(--color-ink-muted)] truncate">{label}</span>
+    </div>
+  )
+}
+
+function PinnedBanner({
+  messages,
+  onJump,
+}: {
+  messages: ChatMessage[]
+  onJump: (uid: string) => void
+}) {
+  const { t } = useTranslation()
+  const [expanded, setExpanded] = useState(false)
+  const pinned = messages.filter((m) => m.is_pinned && !m.deleted_at)
+  if (pinned.length === 0) return null
+
+  return (
+    <div className="border-b border-[var(--color-line)] bg-[color-mix(in_oklab,var(--color-flame)_8%,transparent)] shrink-0">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full flex items-center gap-2 px-4 py-1.5 text-left hover:bg-[color-mix(in_oklab,var(--color-flame)_14%,transparent)]"
+      >
+        <span aria-hidden>📌</span>
+        <span className="text-[11px] font-mono uppercase tracking-wider text-[var(--color-flame-soft)] flex-1">
+          {t('chat.pinnedCount', { count: pinned.length })}
+        </span>
+        <span className="text-[10px] text-[var(--color-ink-muted)]">{expanded ? '▲' : '▼'}</span>
+      </button>
+      {expanded && (
+        <ul className="px-3 pb-2 space-y-1 max-h-40 overflow-y-auto">
+          {pinned.map((m) => (
+            <li key={m.uid}>
+              <button
+                type="button"
+                onClick={() => onJump(m.uid)}
+                className="w-full text-left px-2 py-1 rounded text-xs hover:bg-[color-mix(in_oklab,var(--color-flame)_14%,transparent)]"
+              >
+                <span className="font-mono text-[10px] text-[var(--color-ink-faint)]">{m.sender_name}</span>
+                <span className="block text-[var(--color-ink)] truncate">
+                  {m.body || m.attachment_name || t('chat.attachTitle')}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }
 

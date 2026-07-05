@@ -178,6 +178,13 @@ function RoomRow({ room }: { room: Room }) {
               {t('dashboard.badgeWaitingRoom')}
             </span>
           )}
+          {room.is_webinar && (
+            <span
+              className="inline-flex items-center gap-1 rounded border border-[var(--color-flame)] text-[var(--color-flame-soft)] px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-wider"
+            >
+              {t('dashboard.badgeWebinar')}
+            </span>
+          )}
           {schedule && <ScheduleBadge status={schedule.status} />}
         </div>
 

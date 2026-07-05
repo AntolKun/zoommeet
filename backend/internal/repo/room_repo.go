@@ -18,7 +18,7 @@ func NewRoomRepo(db *sql.DB) *RoomRepo {
 	return &RoomRepo{db: db}
 }
 
-const roomColumns = `id, slug, name, owner_id, is_public, is_locked, password_hash, scheduled_at, duration_minutes, recurrence, waiting_room_enabled, default_mic_off, default_cam_off, created_at, updated_at`
+const roomColumns = `id, slug, name, owner_id, is_public, is_locked, password_hash, scheduled_at, duration_minutes, recurrence, waiting_room_enabled, default_mic_off, default_cam_off, is_webinar, created_at, updated_at`
 
 func scanRoom(row interface{ Scan(...any) error }, rm *models.Room) error {
 	var pwHash sql.NullString
@@ -29,6 +29,7 @@ func scanRoom(row interface{ Scan(...any) error }, rm *models.Room) error {
 		&rm.ScheduledAt, &rm.DurationMinutes, &recurrence,
 		&rm.WaitingRoomEnabled,
 		&rm.DefaultMicOff, &rm.DefaultCamOff,
+		&rm.IsWebinar,
 		&rm.CreatedAt, &rm.UpdatedAt,
 	); err != nil {
 		return err
@@ -58,13 +59,14 @@ type CreateRoomInput struct {
 	WaitingRoomEnabled bool
 	DefaultMicOff      bool
 	DefaultCamOff      bool
+	IsWebinar          bool
 }
 
 func (r *RoomRepo) Create(in CreateRoomInput) (*models.Room, error) {
 	res, err := r.db.Exec(
-		`INSERT INTO rooms (slug, name, owner_id, is_public, password_hash, scheduled_at, duration_minutes, recurrence, waiting_room_enabled, default_mic_off, default_cam_off)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		in.Slug, in.Name, in.OwnerID, in.IsPublic, in.PasswordHash, in.ScheduledAt, in.DurationMinutes, in.Recurrence, in.WaitingRoomEnabled, in.DefaultMicOff, in.DefaultCamOff,
+		`INSERT INTO rooms (slug, name, owner_id, is_public, password_hash, scheduled_at, duration_minutes, recurrence, waiting_room_enabled, default_mic_off, default_cam_off, is_webinar)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		in.Slug, in.Name, in.OwnerID, in.IsPublic, in.PasswordHash, in.ScheduledAt, in.DurationMinutes, in.Recurrence, in.WaitingRoomEnabled, in.DefaultMicOff, in.DefaultCamOff, in.IsWebinar,
 	)
 	if err != nil {
 		return nil, err

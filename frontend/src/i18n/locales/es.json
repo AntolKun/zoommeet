@@ -136,6 +136,7 @@
     "badgeLocked": "bloqueado",
     "badgePassword": "🔒 contraseña",
     "badgeWaitingRoom": "⏳ sala de espera",
+    "badgeWebinar": "📺 seminario",
     "scheduleUpcoming": "próxima",
     "scheduleLive": "en vivo",
     "schedulePast": "finalizada",
@@ -181,6 +182,10 @@
     "defaultCamOffOnSubtitle": "Los nuevos participantes entran al pre-join con cámara apagada. Pueden encenderla antes de Unirse.",
     "defaultCamOffOffTitle": "Cámara encendida al entrar",
     "defaultCamOffOffSubtitle": "La cámara está encendida por defecto (los participantes igual pueden elegir)",
+    "webinarOnTitle": "Modo Seminario",
+    "webinarOnSubtitle": "Solo anfitrión + coanfitriones pueden publicar audio/video. La audiencia solo ve + chat + reacciones.",
+    "webinarOffTitle": "Reunión normal",
+    "webinarOffSubtitle": "Todos pueden hablar y compartir video.",
     "create": "Crear",
     "creating": "Creando...",
     "errSlugTaken": "Ese slug ya está tomado. Prueba otro.",
@@ -524,7 +529,36 @@
     "attachTitle": "Adjuntar archivo",
     "attachRemove": "Cancelar adjunto",
     "attachTooBig": "Archivo muy grande (máx. 10 MB)",
-    "attachUploadFail": "Error al subir archivo"
+    "attachUploadFail": "Error al subir archivo",
+    "replyTitle": "Responder a este mensaje",
+    "replyingTo": "Respondiendo a {{name}}",
+    "replyCancel": "Cancelar respuesta",
+    "replyDeleted": "mensaje eliminado",
+    "pinTitle": "Fijar mensaje",
+    "unpinTitle": "Quitar fijado",
+    "pinnedCount_one": "{{count}} mensaje fijado",
+    "pinnedCount_other": "{{count}} mensajes fijados",
+    "typingSingle": "{{name}} está escribiendo...",
+    "typingPair": "{{a}} y {{b}} están escribiendo...",
+    "typingMany": "{{count}} personas están escribiendo...",
+    "readSent": "Enviado",
+    "readSeen": "Visto"
+  },
+  "gif": {
+    "title": "Enviar un GIF",
+    "searchPlaceholder": "Buscar GIFs...",
+    "loading": "cargando GIFs...",
+    "empty": "Sin GIFs coincidentes.",
+    "loadError": "Error al cargar GIFs",
+    "poweredBy": "Con tecnología Giphy"
+  },
+  "soundboard": {
+    "title": "Panel de sonidos — reproducir efectos para todos",
+    "short": "Sonidos",
+    "hint": "Clic para reproducir (todos lo escuchan)"
+  },
+  "webinar": {
+    "audienceLabel": "Modo audiencia — solo mirar, chat y reaccionar"
   },
   "participants": {
     "title": "Participantes",

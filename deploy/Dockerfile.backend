@@ -1,0 +1,31 @@
+# Multi-stage build: compile Go binary, then ship on minimal Alpine.
+FROM golang:1.23-alpine AS builder
+
+WORKDIR /src
+
+# Cache module downloads separately from source so subsequent builds are fast.
+COPY backend/go.mod backend/go.sum ./
+RUN go mod download
+
+COPY backend/ .
+
+# Static build, stripped symbols, so the binary works in scratch/alpine.
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags="-s -w" \
+    -o /out/server \
+    ./cmd/server
+
+
+FROM alpine:3.19
+
+RUN apk add --no-cache ca-certificates tzdata && \
+    addgroup -g 1000 app && \
+    adduser -D -u 1000 -G app app
+
+WORKDIR /app
+COPY --from=builder /out/server /app/server
+
+USER app
+EXPOSE 8080
+
+ENTRYPOINT ["/app/server"]

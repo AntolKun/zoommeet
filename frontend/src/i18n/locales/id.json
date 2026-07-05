@@ -136,6 +136,7 @@
     "badgeLocked": "terkunci",
     "badgePassword": "🔒 password",
     "badgeWaitingRoom": "⏳ ruang tunggu",
+    "badgeWebinar": "📺 webinar",
     "scheduleUpcoming": "akan datang",
     "scheduleLive": "live sekarang",
     "schedulePast": "selesai",
@@ -181,6 +182,10 @@
     "defaultCamOffOnSubtitle": "Tiap peserta baru landed di pre-join dengan kamera mati. Bisa dinyalain sebelum klik Join.",
     "defaultCamOffOffTitle": "Kamera nyala saat masuk",
     "defaultCamOffOffSubtitle": "Kamera peserta nyala secara default (mereka tetap bisa pilih sendiri)",
+    "webinarOnTitle": "Mode Webinar",
+    "webinarOnSubtitle": "Cuma host + cohost yang bisa nyala mic/kamera. Audiens cuma nonton + chat + reaksi.",
+    "webinarOffTitle": "Meeting biasa",
+    "webinarOffSubtitle": "Semua peserta bisa ngobrol dan tampilin video.",
     "create": "Bikin meeting",
     "creating": "Membuat...",
     "errSlugTaken": "Slug itu udah dipakai. Coba yang lain.",
@@ -524,7 +529,36 @@
     "attachTitle": "Lampirkan file",
     "attachRemove": "Batalkan lampiran",
     "attachTooBig": "File terlalu besar (maks 10 MB)",
-    "attachUploadFail": "Gagal upload file"
+    "attachUploadFail": "Gagal upload file",
+    "replyTitle": "Balas pesan ini",
+    "replyingTo": "Membalas {{name}}",
+    "replyCancel": "Batal membalas",
+    "replyDeleted": "pesan sudah dihapus",
+    "pinTitle": "Tandai pesan (pin)",
+    "unpinTitle": "Lepas pin",
+    "pinnedCount_one": "{{count}} pesan dipin",
+    "pinnedCount_other": "{{count}} pesan dipin",
+    "typingSingle": "{{name}} sedang mengetik...",
+    "typingPair": "{{a}} dan {{b}} sedang mengetik...",
+    "typingMany": "{{count}} orang sedang mengetik...",
+    "readSent": "Terkirim",
+    "readSeen": "Sudah dibaca"
+  },
+  "gif": {
+    "title": "Kirim GIF",
+    "searchPlaceholder": "Cari GIF...",
+    "loading": "memuat GIF...",
+    "empty": "Gak ada GIF yang cocok.",
+    "loadError": "Gagal muat GIF",
+    "poweredBy": "Powered by Giphy"
+  },
+  "soundboard": {
+    "title": "Soundboard — mainkan efek suara ke semua peserta",
+    "short": "Soundboard",
+    "hint": "Klik untuk mainkan (semua orang denger)"
+  },
+  "webinar": {
+    "audienceLabel": "Mode Audiens — cuma bisa nonton, chat, & reaksi"
   },
   "participants": {
     "title": "Peserta",

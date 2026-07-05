@@ -13,6 +13,7 @@ import { AudioOnlyButton } from '@/components/AudioOnlyButton'
 import { MirrorButton } from '@/components/MirrorButton'
 import { BackgroundEffectButton } from '@/components/BackgroundEffectButton'
 import { NoiseSuppressionButton } from '@/components/NoiseSuppressionButton'
+import { SoundboardButton } from '@/components/SoundboardButton'
 import { ScreenShareButton } from '@/components/ScreenShareButton'
 import { HostMenu } from '@/components/HostMenu'
 import { VoteButtons } from '@/components/VoteButtons'
@@ -137,6 +138,7 @@ export function RoomControls({
         </button>
 
         <Reactions />
+        <SoundboardButton />
         <RaiseHandButton />
         <VoteButtons />
         <button

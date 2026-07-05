@@ -1,0 +1,12 @@
+**/node_modules
+**/dist
+**/build
+**/.git
+**/.env
+**/.env.local
+**/.env.prod
+**/tmp
+**/*.log
+**/.DS_Store
+frontend/node_modules
+backend/tmp

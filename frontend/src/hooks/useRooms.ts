@@ -20,6 +20,8 @@ export type Room = {
   default_mic_off: boolean
   /** Initial cam state for new joiners: true = pre-join starts with cam off. */
   default_cam_off: boolean
+  /** Webinar mode: only host + cohosts publish; audience is watch-only. */
+  is_webinar: boolean
   created_at: string
   updated_at: string
 }
@@ -41,6 +43,7 @@ export type CreateRoomInput = {
   waiting_room_enabled?: boolean
   default_mic_off?: boolean
   default_cam_off?: boolean
+  is_webinar?: boolean
 }
 
 const roomsKey = ['rooms', 'my'] as const

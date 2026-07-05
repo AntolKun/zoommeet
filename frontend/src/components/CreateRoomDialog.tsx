@@ -37,6 +37,7 @@ function makeSchema(t: (k: string) => string) {
       waiting_room_enabled: z.boolean(),
       default_mic_off: z.boolean(),
       default_cam_off: z.boolean(),
+      is_webinar: z.boolean(),
     })
     .refine((v) => !v.is_scheduled || v.scheduled_at_local.length > 0, {
       path: ['scheduled_at_local'],
@@ -79,6 +80,7 @@ export function CreateRoomDialog({ open, onClose, onCreated }: Props) {
       waiting_room_enabled: false,
       default_mic_off: false,
       default_cam_off: false,
+      is_webinar: false,
     },
   })
 
@@ -87,6 +89,7 @@ export function CreateRoomDialog({ open, onClose, onCreated }: Props) {
   const waitingRoomEnabled = watch('waiting_room_enabled')
   const defaultMicOff = watch('default_mic_off')
   const defaultCamOff = watch('default_cam_off')
+  const isWebinar = watch('is_webinar')
 
   function close() {
     reset()
@@ -112,6 +115,7 @@ export function CreateRoomDialog({ open, onClose, onCreated }: Props) {
         ...(values.waiting_room_enabled ? { waiting_room_enabled: true } : {}),
         ...(values.default_mic_off ? { default_mic_off: true } : {}),
         ...(values.default_cam_off ? { default_cam_off: true } : {}),
+        ...(values.is_webinar ? { is_webinar: true } : {}),
       }
       const room = await createRoom.mutateAsync(payload)
       reset()
@@ -219,6 +223,17 @@ export function CreateRoomDialog({ open, onClose, onCreated }: Props) {
             defaultCamOff
               ? t('createRoom.defaultCamOffOnSubtitle')
               : t('createRoom.defaultCamOffOffSubtitle')
+          }
+        />
+
+        <ToggleRow
+          on={isWebinar}
+          onToggle={() => setValue('is_webinar', !isWebinar)}
+          title={isWebinar ? t('createRoom.webinarOnTitle') : t('createRoom.webinarOffTitle')}
+          subtitle={
+            isWebinar
+              ? t('createRoom.webinarOnSubtitle')
+              : t('createRoom.webinarOffSubtitle')
           }
         />
 

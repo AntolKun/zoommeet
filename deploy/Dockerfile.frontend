@@ -1,0 +1,23 @@
+# Frontend Vite build → nginx static serve.
+FROM node:20-alpine AS builder
+
+WORKDIR /src
+
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+
+COPY frontend/ .
+
+# VITE_API_BASE_URL is baked at build time. Apache reverse proxies /api on the
+# same origin, so relative /api works and avoids CORS entirely.
+ENV VITE_API_BASE_URL=/api
+RUN npm run build
+
+
+FROM nginx:1.27-alpine
+
+RUN rm /etc/nginx/conf.d/default.conf
+COPY deploy/nginx-frontend.conf /etc/nginx/conf.d/default.conf
+COPY --from=builder /src/dist /usr/share/nginx/html
+
+EXPOSE 80

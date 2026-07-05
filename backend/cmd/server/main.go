@@ -149,7 +149,7 @@ func main() {
 		protected := api.Group("")
 		protected.Use(authMW)
 		{
-			protected.POST("/token", handlers.Token(cfg, users, rooms, waiting))
+			protected.POST("/token", handlers.Token(cfg, users, rooms, waiting, cohosts))
 			protected.POST("/rooms", handlers.CreateRoom(rooms))
 			protected.GET("/rooms/my", handlers.ListMyRooms(rooms))
 			protected.GET("/rooms/:idOrSlug", handlers.GetRoom(rooms, cohosts))

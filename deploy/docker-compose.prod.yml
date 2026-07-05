@@ -1,0 +1,94 @@
+# Isolated stack — all services bind to 127.0.0.1 with high ports so nothing
+# collides with the existing Apache/ijeon services on this VPS.
+# Apache handles the public :80/:443 termination and reverse-proxies to us.
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: vc-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: videoconf
+      MYSQL_USER: appuser
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - "127.0.0.1:13306:3306"
+    volumes:
+      - vc_mysql_data:/var/lib/mysql
+      - ../db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: vc-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:16379:6379"
+    volumes:
+      - vc_redis_data:/data
+
+  minio:
+    image: minio/minio:latest
+    container_name: vc-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "127.0.0.1:19000:9000"  # S3 API
+      - "127.0.0.1:19001:9001"  # Web console (internal only)
+    volumes:
+      - vc_minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  backend:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.backend
+    container_name: vc-backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      APP_ENV: production
+      PORT: "8080"
+      LIVEKIT_API_URL: ${LIVEKIT_API_URL}
+      LIVEKIT_WS_URL: ${LIVEKIT_WS_URL}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
+      DB_DSN: "appuser:${MYSQL_PASSWORD}@tcp(mysql:3306)/videoconf?parseTime=true"
+      APP_JWT_SECRET: ${APP_JWT_SECRET}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      MINIO_ENDPOINT: "minio:9000"
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_USE_SSL: "false"
+      MINIO_AVATAR_BUCKET: avatars
+      MINIO_ATTACHMENT_BUCKET: chat-attachments
+      MINIO_PUBLIC_BASE_URL: ${MINIO_PUBLIC_BASE_URL}
+    ports:
+      - "127.0.0.1:18080:8080"
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.frontend
+    container_name: vc-frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:13000:80"
+
+volumes:
+  vc_mysql_data:
+  vc_redis_data:
+  vc_minio_data:

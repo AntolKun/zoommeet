@@ -216,7 +216,7 @@ func requireOwner(c *gin.Context, rooms *repo.RoomRepo) (*roomRef, bool) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "only owner allowed"})
 		return nil, false
 	}
-	return &roomRef{ID: room.ID, Slug: room.Slug, OwnerID: room.OwnerID}, true
+	return &roomRef{ID: room.ID, Slug: room.Slug, OwnerID: room.OwnerID, IsWebinar: room.IsWebinar}, true
 }
 
 // requireOwnerOrCohost is the relaxed variant used for shared host controls
@@ -229,7 +229,7 @@ func requireOwnerOrCohost(c *gin.Context, rooms *repo.RoomRepo, cohosts *repo.Co
 	}
 	userID, _ := middleware.UserIDFromCtx(c)
 	if room.OwnerID == userID {
-		return &roomRef{ID: room.ID, Slug: room.Slug, OwnerID: room.OwnerID}, true
+		return &roomRef{ID: room.ID, Slug: room.Slug, OwnerID: room.OwnerID, IsWebinar: room.IsWebinar}, true
 	}
 	isCohost, err := cohosts.IsCohost(room.ID, userID)
 	if err != nil {
@@ -240,11 +240,12 @@ func requireOwnerOrCohost(c *gin.Context, rooms *repo.RoomRepo, cohosts *repo.Co
 		c.JSON(http.StatusForbidden, gin.H{"error": "only owner or cohost allowed"})
 		return nil, false
 	}
-	return &roomRef{ID: room.ID, Slug: room.Slug, OwnerID: room.OwnerID}, true
+	return &roomRef{ID: room.ID, Slug: room.Slug, OwnerID: room.OwnerID, IsWebinar: room.IsWebinar}, true
 }
 
 type roomRef struct {
-	ID      uint64
-	Slug    string
-	OwnerID uint64
+	ID        uint64
+	Slug      string
+	OwnerID   uint64
+	IsWebinar bool
 }
